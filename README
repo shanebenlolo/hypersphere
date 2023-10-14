@@ -1,0 +1,13 @@
+## To run the application locally:
+
+```
+WINIT_UNIX_BACKEND="x11" cargo watch -x  "run"
+```
+
+## to compile for web:
+
+```
+wasm-pack build --target web
+```
+
+once compiled, serve your index.html page (I have been using live server)

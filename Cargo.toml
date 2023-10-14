@@ -16,11 +16,13 @@ tracing-subscriber = {version = "0.3.17", features=["time"]}
 tracing-web = "0.1.2"
 wgpu = "0.17.1"
 winit = "0.28.7"
+pollster = "0.3"
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 console_log = "1.0"
+tracing-wasm = "0.2.1"
 wgpu = { version = "0.17", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.30"

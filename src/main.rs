@@ -1,5 +1,6 @@
 use learn_wgpu::run;
+use pollster;
+
 fn main() {
-    tracing_subscriber::fmt::init();
-    run();
+    pollster::block_on(run());
 }
