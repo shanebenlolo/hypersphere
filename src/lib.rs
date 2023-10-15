@@ -225,18 +225,6 @@ impl State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                device_id,
-                input,
-                is_synthetic,
-            } => match input.virtual_keycode.unwrap() {
-                VirtualKeyCode::Space => {}
-                _ => {}
-            },
-            _ => {}
-        }
-
         false
     }
 
