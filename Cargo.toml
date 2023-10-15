@@ -17,6 +17,7 @@ tracing-web = "0.1.2"
 wgpu = "0.17.1"
 winit = "0.28.7"
 pollster = "0.3"
+bytemuck = { version = "1.12", features = [ "derive" ] }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
