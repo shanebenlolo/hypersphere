@@ -1,0 +1,64 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'learn_wgpu'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=learn_wgpu"
+                ],
+                "filter": {
+                    "name": "learn_wgpu",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'learn_wgpu'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=learn_wgpu",
+                    "--package=learn_wgpu"
+                ],
+                "filter": {
+                    "name": "learn_wgpu",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'learn_wgpu'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=learn_wgpu",
+                    "--package=learn_wgpu"
+                ],
+                "filter": {
+                    "name": "learn_wgpu",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

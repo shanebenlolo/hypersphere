@@ -18,7 +18,19 @@ wgpu = "0.17.1"
 winit = "0.28.7"
 pollster = "0.3"
 bytemuck = { version = "1.12", features = [ "derive" ] }
+anyhow = "1.0"
 
+
+# Decoding jpegs in WASM isn't very performant.
+# If you want to speed up image loading in general 
+# in WASM you could opt to use the browser's built-in
+# decoders instead of image when building with 
+# wasm-bindgen. This will involve creating an <img>
+# tag in Rust to get the image, and then a <canvas> to get the pixel data
+[dependencies.image]
+version = "0.24"
+default-features = false
+features = ["png", "jpeg"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
