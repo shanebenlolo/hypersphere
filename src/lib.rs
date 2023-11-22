@@ -14,10 +14,12 @@ use winit::{
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     color: [f32; 4], // Color as RGBA
+    light_dir: [f32; 3],
 }
 
 const UNIFORMS: Uniforms = Uniforms {
-    color: [1.0, 0.0, 0.0, 1.0], // Red color
+    color: [0.1, 0.2, 0.5, 1.0],
+    light_dir: [-1.0, -1.0, 0.0],
 };
 
 #[repr(C)]
@@ -41,25 +43,52 @@ impl Vertex {
     }
 }
 
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [-1.0, 1.0, 0.0],
-    }, // A
-    Vertex {
-        position: [1.0, 1.0, 0.0],
-    }, // B
-    Vertex {
-        position: [1.0, -1.0, 0.0],
-    }, // C
-    Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
-    }, // D
-    Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
-    }, // E
-];
-const INDICES: &[u16] = &[0, 1, 2];
+const R: f32 = 100.0;
+const TOTAL: u32 = 90;
 
+fn map(value: u32, start1: u32, stop1: u32, start2: f32, stop2: f32) -> f32 {
+    start2 + (stop2 - start2) * ((value as f32 - start1 as f32) / (stop1 as f32 - start1 as f32))
+}
+
+fn create_vertex(lat: f32, lon: f32) -> Vertex {
+    let x = R * lat.sin() * lon.cos();
+    let y = R * lat.sin() * lon.sin();
+    let z = R * lat.cos();
+    Vertex {
+        position: [x, y, z],
+    }
+}
+
+fn generate_globe_and_indices() -> (Vec<Vertex>, Vec<u32>) {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    // Create vertices
+    for i in 0..=TOTAL {
+        let lat = map(i, 0, TOTAL, 0.0, std::f32::consts::PI);
+        for j in 0..=TOTAL {
+            let lon = map(j, 0, TOTAL, 0.0, 2.0 * std::f32::consts::PI);
+            vertices.push(create_vertex(lat, lon));
+        }
+    }
+
+    // Create indices for triangle strips
+    for i in 0..TOTAL {
+        for j in 0..=TOTAL {
+            indices.push(i * (TOTAL + 1) + j); // Vertex in current row
+            indices.push((i + 1) * (TOTAL + 1) + j); // Vertex in next row
+        }
+
+        if i != TOTAL - 1 {
+            // Degenerate triangle to stitch strips together: repeat the last vertex of the current strip
+            // and the first vertex of the next strip
+            indices.push((i + 1) * (TOTAL + 1) + TOTAL);
+            indices.push((i + 1) * (TOTAL + 1));
+        }
+    }
+
+    (vertices, indices)
+}
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Triangle {
@@ -237,6 +266,13 @@ impl State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
+        let (globe_vertices, index_buffer) = generate_globe_and_indices();
+        // Flatten the globe_vertices into a single Vec<Vertex>
+
+        // Get a slice of Vertex from the Vec<Vertex>
+        let vertex_slice = globe_vertices.as_slice();
+        let index_slice = index_buffer.as_slice();
+
         // The instance is a handle to our GPU
         // Backends::all => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -340,51 +376,74 @@ impl State {
             }],
             label: Some("camera_bind_group"),
         });
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = CameraController::new(5.0);
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex Buffer"),
-            contents: bytemuck::cast_slice(TRIANGLES),
+            contents: bytemuck::cast_slice(vertex_slice),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
+            contents: bytemuck::cast_slice(index_slice),
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::bytes_of(&UNIFORMS),
+        let color_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Color Uniform Buffer"),
+            contents: bytemuck::bytes_of(&UNIFORMS.color),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let light_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Uniform Buffer"),
+            contents: bytemuck::bytes_of(&UNIFORMS.light_dir),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
                 label: Some("uniform_bind_group_layout"),
             });
 
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: color_uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: light_uniform_buffer.as_entire_binding(),
+                },
+            ],
             label: Some("uniform_bind_group"),
         });
 
-        let num_indices = INDICES.len() as u32;
+        let num_indices = index_slice.len() as u32;
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -416,7 +475,7 @@ impl State {
             }),
             primitive: wgpu::PrimitiveState {
                 // every three vertices will correspond to one triangle.
-                topology: wgpu::PrimitiveTopology::TriangleList,
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
                 strip_index_format: None,
                 // a triangle is facing forward if the vertices are arranged in
                 // a counter-clockwise direction
@@ -526,7 +585,7 @@ impl State {
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
 
         drop(render_pass);
