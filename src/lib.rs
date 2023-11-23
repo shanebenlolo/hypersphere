@@ -1,5 +1,7 @@
 mod texture;
+use image::GenericImageView;
 
+use image::{ImageBuffer, Rgba};
 use tracing::{error, info, warn};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -89,25 +91,10 @@ fn generate_globe_and_indices() -> (Vec<Vertex>, Vec<u32>) {
 
     (vertices, indices)
 }
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Triangle {
-    vertices: [Vertex; 3], // An array of 3 Vertex structs
-}
 
-const TRIANGLES: &[Triangle] = &[Triangle {
-    vertices: [
-        Vertex {
-            position: [-1.0, 1.0, 0.0], //
-        },
-        Vertex {
-            position: [1.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [1.0, -1.0, 0.0],
-        },
-    ],
-}];
+fn degrees_to_radians(degrees: f64) -> f64 {
+    degrees * (std::f64::consts::PI / 180.0)
+}
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -260,6 +247,7 @@ struct State {
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
     uniform_bind_group: wgpu::BindGroup,
+    texture_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -333,6 +321,129 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        // Define a vector to hold the image buffers
+        let mut image_data: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = Vec::new();
+
+        // Load the image into each slot of the vector
+        // include_bytes! is a compile-time macro and cannot be used with variable paths.
+        // You will need to have each image path hardcoded or use another method
+        // to load image bytes at runtime.
+        for _ in 0..6 {
+            let cube_bytes = include_bytes!("./assets/happy-tree-1.png");
+            let cube_image = image::load_from_memory(cube_bytes).unwrap();
+            let cube_rgba = cube_image.to_rgba8();
+            image_data.push(cube_rgba);
+        }
+
+        // Assuming all images have the same dimensions
+        let dimensions = image_data[0].dimensions();
+        let face_size = wgpu::Extent3d {
+            width: dimensions.0,
+            height: dimensions.1,
+            depth_or_array_layers: 1, // Single layer for each face
+        };
+
+        // Create the cube texture
+        let cube_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: dimensions.0,
+                height: dimensions.1,
+                depth_or_array_layers: 6, // 6 layers for cube texture
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("cube_texture"),
+            view_formats: &[],
+        });
+
+        // Copy each face into the cube texture
+        for (i, data) in image_data.iter().enumerate() {
+            queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &cube_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: i as u32, // Specifies which layer of the cube map to copy to
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(&data),
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some((dimensions.0 * 4) as u32), // 4 bytes per pixel for RGBA
+                    rows_per_image: Some(dimensions.1 as u32),
+                },
+                face_size,
+            );
+        }
+
+        let cube_texture_view = cube_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Cube Texture View"),
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: 0,
+            array_layer_count: Some(6),
+        });
+        let cube_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    // texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::Cube,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&cube_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&cube_sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
         let camera = Camera {
             // position the camera one unit up and 2 units back
             // +z is out of the screen
@@ -376,7 +487,7 @@ impl State {
             }],
             label: Some("camera_bind_group"),
         });
-        let camera_controller = CameraController::new(5.0);
+        let camera_controller = CameraController::new(10.0);
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
@@ -448,7 +559,11 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&uniform_bind_group_layout, &camera_bind_group_layout],
+                bind_group_layouts: &[
+                    &uniform_bind_group_layout,
+                    &camera_bind_group_layout,
+                    &texture_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -482,7 +597,7 @@ impl State {
                 front_face: wgpu::FrontFace::Ccw,
                 // Some(wgpu::Face::Back) makes it so if objects are not facing
                 // camera they are not rendered
-                cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 // anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                 polygon_mode: wgpu::PolygonMode::Fill,
                 // Requires Features::DEPTH_CLIP_CONTROL
@@ -518,6 +633,7 @@ impl State {
             camera_bind_group,
             camera_controller,
             uniform_bind_group,
+            texture_bind_group,
         }
     }
 
@@ -584,6 +700,7 @@ impl State {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.texture_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
