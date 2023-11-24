@@ -1,10 +1,5 @@
 mod texture;
-use cgmath::SquareMatrix;
-use image::GenericImageView;
 use image::{ImageBuffer, Rgba};
-use tracing::{error, info, warn};
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
@@ -12,13 +7,17 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use web_sys::{window, KeyboardEvent};
+
 const IDENTITY_MATRIX_4: [[f32; 4]; 4] = [
     [1.0, 0.0, 0.0, 0.0],
     [0.0, 1.0, 0.0, 0.0],
     [0.0, 0.0, 1.0, 0.0],
     [0.0, 0.0, 0.0, 1.0],
 ];
-const IDENTITY_MATRIX_3: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 const R: f32 = 100.0;
 const TOTAL: u32 = 90;
 
@@ -134,7 +133,7 @@ impl CameraController {
         }
     }
 
-    fn process_events(&mut self, event: &WindowEvent) -> bool {
+    fn process_key_events(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
                 input:
@@ -229,12 +228,12 @@ impl CameraUniform {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     color: [f32; 4], // Color as RGBA
-    world_space_normal_matrix: [[f32; 3]; 3],
+    light_direction: [f32; 4],
 }
 
 const UNIFORMS: Uniforms = Uniforms {
     color: [0.0, 0.0, 0.0, 0.0],
-    world_space_normal_matrix: IDENTITY_MATRIX_3,
+    light_direction: [1.0, 0.0, 0.0, 0.0],
 };
 
 struct State {
@@ -294,7 +293,7 @@ impl State {
                     // WebGL doesn't support all of wgpu's features, so if
                     // we're building for the web we'll have to disable some.
                     limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_defaults()
+                        wgpu::Limits::downlevel_webgl2_defaults()
                     } else {
                         wgpu::Limits::downlevel_webgl2_defaults()
                     },
@@ -523,7 +522,7 @@ impl State {
         });
         let normal_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Normal Uniform Buffer"),
-            contents: bytemuck::bytes_of(&UNIFORMS.world_space_normal_matrix),
+            contents: bytemuck::bytes_of(&UNIFORMS.light_direction),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let uniform_bind_group_layout =
@@ -661,7 +660,16 @@ impl State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        self.camera_controller.process_events(event)
+        match event {
+            WindowEvent::MouseInput { button, state, .. } => {
+                if button == &MouseButton::Left && state == &ElementState::Pressed {
+                    print("I have been clicked")
+                }
+            }
+            _ => {}
+        }
+
+        self.camera_controller.process_key_events(event)
     }
 
     fn update(&mut self) {
@@ -743,6 +751,13 @@ pub async fn run() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
+    // Set up keydown event listener
+    // this works outside of canvas.
+    // I don't want to delete because it works
+    // and is a good reference
+    #[cfg(target_arch = "wasm32")]
+    setup_keydown_listener();
+
     #[cfg(target_arch = "wasm32")]
     {
         // Winit prevents sizing with CSS, so we have to
@@ -813,4 +828,35 @@ pub async fn run() {
 
         _ => {}
     });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn setup_keydown_listener() {
+    let closure = Closure::wrap(Box::new(move |event: KeyboardEvent| {
+        if event.key() == "ArrowDown" {
+            // Handle the Arrow Down key press
+            web_sys::console::log_1(&"Arrow Down pressed".into());
+        }
+    }) as Box<dyn FnMut(KeyboardEvent)>);
+
+    window()
+        .unwrap()
+        .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget(); // Prevents the closure from being garbage-collected
+}
+
+// Define a helper function `print`
+fn print(message: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Use `console::log_1` for WebAssembly target
+        web_sys::console::log_1(&message.into());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Use `println!` for non-WebAssembly targets
+        println!("{}", message);
+    }
 }

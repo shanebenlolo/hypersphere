@@ -23,7 +23,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 // fragment
 @group(0) @binding(0) var<uniform> u_Color: vec4<f32>;
-@group(0) @binding(1) var<uniform> u_lightDirection: vec3<f32>;
+@group(0) @binding(1) var<uniform> u_lightDirection: vec4<f32>; // vec4 instead of 3 to be 16 bytes so its WebGL2 compliant
 
 @group(2) @binding(0) var globeTexture: texture_cube<f32>;
 @group(2) @binding(1) var globeSampler: sampler;
@@ -31,7 +31,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal = normalize(in.world_direction); // Correctly calculate the normal
-    let light_dir = normalize(u_lightDirection);
+    let light_dir = normalize(u_lightDirection.xyz);
     let lambertian = max(dot(normal, light_dir), 0.0);
 
     // Soften the diffuse lighting by raising lambertian to a fraction power
