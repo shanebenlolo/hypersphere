@@ -1,4 +1,3 @@
-// vertex shader
 struct CameraUniform {
     view_proj: mat4x4<f32>,
 };
@@ -9,22 +8,16 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) direction : vec3<f32>,
-    
-    // @location(0) world_position: vec3<f32>, // This will be used for normal calculation in the fragment shader
+    @location(0) world_direction: vec3<f32>,
 };
 
-// vertex
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
 
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let clip_position: vec4<f32> = camera.view_proj * vec4<f32>(model.position, 1.0);
-    out.clip_position = clip_position;
-    out.direction = normalize(clip_position.xyz);
-
-    // out.world_position = model.position; // Pass the position to the fragment shader for normal calculation
+    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    out.world_direction = normalize(model.position); // Use the vertex position as the direction for a sphere centered at the origin
     return out;
 }
 
@@ -37,17 +30,20 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // let normal = normalize(in.world_position.xyz); // Normalize the position to use as a normal
-    // let light_dir = normalize(u_lightDirection); // Ensure the light direction is normalized
-    // let lambertian = max(dot(normal, light_dir), 0.0); // Lambertian reflectance
+    let normal = normalize(in.world_direction); // Correctly calculate the normal
+    let light_dir = normalize(u_lightDirection);
+    let lambertian = max(dot(normal, light_dir), 0.0);
 
-    // let diffuse = lambertian; // Simple diffuse lighting
-    // let ambient = 0.1; // Ambient light level to ensure that the dark side isn't completely black
+    // Soften the diffuse lighting by raising lambertian to a fraction power
+    let diffuse = pow(lambertian, 0.5); // Raise to the power of 0.5 to soften
+    let ambient = 0.1;
 
-    // let lighting = ambient + diffuse; // Combine diffuse and ambient light
-    // let color = u_Color * lighting; // Apply lighting to the base color
+    let lighting = ambient + diffuse * 0.9; // Reduce the effect of diffuse lighting slightly
+    let color = u_Color * lighting;
 
-    // return color;
- return textureSample(globeTexture, globeSampler, in.direction);
-
+    let cubemap_color = textureSample(globeTexture, globeSampler, in.world_direction);
+    
+    // Adjust the mix factor to create a more gradual transition from light to shadow
+    let mix_factor = smoothstep(0.0, 1.0, lambertian); // Smoothstep can create a smoother transition
+    return mix(color, cubemap_color, mix_factor); // Blend base color with cubemap using the smoothstep result
 }

@@ -1,6 +1,6 @@
 mod texture;
+use cgmath::SquareMatrix;
 use image::GenericImageView;
-
 use image::{ImageBuffer, Rgba};
 use tracing::{error, info, warn};
 #[cfg(target_arch = "wasm32")]
@@ -12,17 +12,15 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct Uniforms {
-    color: [f32; 4], // Color as RGBA
-    light_dir: [f32; 3],
-}
-
-const UNIFORMS: Uniforms = Uniforms {
-    color: [0.1, 0.2, 0.5, 1.0],
-    light_dir: [-1.0, -1.0, 0.0],
-};
+const IDENTITY_MATRIX_4: [[f32; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+const IDENTITY_MATRIX_3: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+const R: f32 = 100.0;
+const TOTAL: u32 = 90;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -44,9 +42,6 @@ impl Vertex {
         }
     }
 }
-
-const R: f32 = 100.0;
-const TOTAL: u32 = 90;
 
 fn map(value: u32, start1: u32, stop1: u32, start2: f32, stop2: f32) -> f32 {
     start2 + (stop2 - start2) * ((value as f32 - start1 as f32) / (stop1 as f32 - start1 as f32))
@@ -118,29 +113,6 @@ impl Camera {
         let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
         return OPENGL_TO_WGPU_MATRIX * proj * view;
-    }
-}
-
-// We need this for Rust to store our data correctly for the shaders
-#[repr(C)]
-// This is so we can store this in a buffer
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
-    // We can't use cgmath with bytemuck directly so we'll have
-    // to convert the Matrix4 into a 4x4 f32 array
-    view_proj: [[f32; 4]; 4],
-}
-
-impl CameraUniform {
-    fn new() -> Self {
-        use cgmath::SquareMatrix;
-        Self {
-            view_proj: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
     }
 }
 
@@ -230,6 +202,40 @@ impl CameraController {
         }
     }
 }
+
+// We need this for Rust to store our data correctly for the shaders
+#[repr(C)]
+// This is so we can store this in a buffer
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct CameraUniform {
+    // We can't use cgmath with bytemuck directly so we'll have
+    // to convert the Matrix4 into a 4x4 f32 array
+    view_proj: [[f32; 4]; 4],
+}
+
+impl CameraUniform {
+    fn new() -> Self {
+        Self {
+            view_proj: IDENTITY_MATRIX_4,
+        }
+    }
+
+    fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_proj = camera.build_view_projection_matrix().into();
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Uniforms {
+    color: [f32; 4], // Color as RGBA
+    light_dir: [f32; 3],
+}
+
+const UNIFORMS: Uniforms = Uniforms {
+    color: [0.0, 0.0, 0.0, 0.5],
+    light_dir: [-1.0, -1.0, 0.0],
+};
 
 struct State {
     size: winit::dpi::PhysicalSize<u32>,
@@ -321,6 +327,14 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        let mut image_urls: Vec<&[u8]> = Vec::new();
+        image_urls.push(include_bytes!("./assets/1.png"));
+        image_urls.push(include_bytes!("./assets/2.png"));
+        image_urls.push(include_bytes!("./assets/3.png"));
+        image_urls.push(include_bytes!("./assets/4.png"));
+        image_urls.push(include_bytes!("./assets/5.png"));
+        image_urls.push(include_bytes!("./assets/6.png"));
+
         // Define a vector to hold the image buffers
         let mut image_data: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = Vec::new();
 
@@ -328,8 +342,8 @@ impl State {
         // include_bytes! is a compile-time macro and cannot be used with variable paths.
         // You will need to have each image path hardcoded or use another method
         // to load image bytes at runtime.
-        for _ in 0..6 {
-            let cube_bytes = include_bytes!("./assets/happy-tree-1.png");
+        for i in 0..6 {
+            let cube_bytes = image_urls[i];
             let cube_image = image::load_from_memory(cube_bytes).unwrap();
             let cube_rgba = cube_image.to_rgba8();
             image_data.push(cube_rgba);
@@ -507,8 +521,8 @@ impl State {
             contents: bytemuck::bytes_of(&UNIFORMS.color),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let light_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Light Uniform Buffer"),
+        let normal_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Normal Uniform Buffer"),
             contents: bytemuck::bytes_of(&UNIFORMS.light_dir),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -548,7 +562,7 @@ impl State {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: light_uniform_buffer.as_entire_binding(),
+                    resource: normal_uniform_buffer.as_entire_binding(),
                 },
             ],
             label: Some("uniform_bind_group"),
@@ -686,10 +700,10 @@ impl State {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.1,
-                        b: 0.2,
-                        a: 1.0,
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.0,
                     }),
                     store: true,
                 },
