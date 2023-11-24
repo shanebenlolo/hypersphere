@@ -229,12 +229,12 @@ impl CameraUniform {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     color: [f32; 4], // Color as RGBA
-    light_dir: [f32; 3],
+    world_space_normal_matrix: [[f32; 3]; 3],
 }
 
 const UNIFORMS: Uniforms = Uniforms {
-    color: [0.0, 0.0, 0.0, 0.5],
-    light_dir: [-1.0, -1.0, 0.0],
+    color: [0.0, 0.0, 0.0, 0.0],
+    world_space_normal_matrix: IDENTITY_MATRIX_3,
 };
 
 struct State {
@@ -523,7 +523,7 @@ impl State {
         });
         let normal_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Normal Uniform Buffer"),
-            contents: bytemuck::bytes_of(&UNIFORMS.light_dir),
+            contents: bytemuck::bytes_of(&UNIFORMS.world_space_normal_matrix),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let uniform_bind_group_layout =
@@ -703,7 +703,7 @@ impl State {
                         r: 0.0,
                         g: 0.0,
                         b: 0.0,
-                        a: 0.0,
+                        a: 1.0,
                     }),
                     store: true,
                 },
