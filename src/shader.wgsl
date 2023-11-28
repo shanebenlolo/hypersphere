@@ -22,6 +22,9 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 }
 
 // fragment
+
+// I am breaking these uniforms into different groups, 
+// you'll need to update your groups when finished
 @group(0) @binding(0) var<uniform> u_Color: vec4<f32>;
 @group(0) @binding(1) var<uniform> u_lightDirection: vec4<f32>; // vec4 instead of 3 to be 16 bytes so its WebGL2 compliant
 
