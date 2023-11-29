@@ -1,11 +1,14 @@
 The Road to ECS
 
-1. you'll want to remove all impls from your component data fields (CameraController, for instance)
+1. follow ECS tutorial, figure out where systems live in relation to components. It looks like your components are
+   correct but I think systems were implemented incorrectly (mainly their use of device is throwing a rench in things)
+
+2. you'll want to remove all impls from your component data fields (CameraController, for instance)
    and place them in your corresponding System implementation
 
-2. create a world, init in State, move components and maybe systems (maybe not?) into the world struct
+3. create a world, init in State, move components and maybe systems (maybe not?) into the world struct
    get rid of the idea of initing your components inside of World::new. Just make discrete functions like load_globe
    and have the systems create the data for components there and add them to the world state.
 
-3. continue refactoring state. I'm not sure what to do with render pipeline yet, it may just stay in the global state
+4. continue refactoring state. I'm not sure what to do with render pipeline yet, it may just stay in the global state
    unless I have a reason to want multiple render pipelines

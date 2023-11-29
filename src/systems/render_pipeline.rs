@@ -1,0 +1,81 @@
+use crate::components::mesh::Vertex;
+
+pub struct RenderPipelineSystem<'a> {
+    device: &'a wgpu::Device,
+}
+
+impl<'a> RenderPipelineSystem<'a> {
+    pub fn new(device: &'a wgpu::Device) -> RenderPipelineSystem {
+        Self { device }
+    }
+
+    pub fn create_render_pipeline_layout(
+        &self,
+        bind_group_layouts: &[&wgpu::BindGroupLayout],
+    ) -> wgpu::PipelineLayout {
+        self.device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            })
+    }
+
+    pub fn create_render_pipeline(
+        &self,
+        pipeline_layout: &wgpu::PipelineLayout,
+        shader_module: &wgpu::ShaderModule,
+        texture_format: wgpu::TextureFormat,
+    ) -> wgpu::RenderPipeline {
+        self.device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(pipeline_layout),
+
+                vertex: wgpu::VertexState {
+                    module: shader_module,
+                    entry_point: "vs_main",
+                    buffers: &[Vertex::desc()],
+                },
+
+                // frag is technically optional, so we
+                // have to wrap it in Some
+                fragment: Some(wgpu::FragmentState {
+                    module: shader_module,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: texture_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    // every three vertices will correspond to one triangle.
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    strip_index_format: None,
+                    // a triangle is facing forward if the vertices are arranged in
+                    // a counter-clockwise direction
+                    front_face: wgpu::FrontFace::Ccw,
+                    // Some(wgpu::Face::Back) makes it so if objects are not facing
+                    // camera they are not rendered
+                    cull_mode: Some(wgpu::Face::Back),
+                    // anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    // Requires Features::DEPTH_CLIP_CONTROL
+                    unclipped_depth: false,
+                    // Requires Features::CONSERVATIVE_RASTERIZATION
+                    conservative: false,
+                },
+                depth_stencil: None,
+                // Multisampling is a complex topic not being discussed
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    // related to anti-aliasing
+                    alpha_to_coverage_enabled: false,
+                },
+                // We won't be rendering to array textures so we can set this to None
+                multiview: None,
+            })
+    }
+}
