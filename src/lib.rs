@@ -128,6 +128,22 @@ impl<T: 'static> ComponentVec for Vec<Option<T>> {
     }
 }
 
+macro_rules! borrow_component_vecs {
+    // Base case: only one component type
+    ($world:expr, $comp:ty) => {
+        $world.borrow_component_vec::<$comp>().unwrap().iter()
+    };
+
+    // Recursive case: multiple component types
+    ($world:expr, $comp:ty, $($rest:ty),+) => {
+        $world
+            .borrow_component_vec::<$comp>()
+            .unwrap()
+            .iter()
+            .zip(borrow_component_vecs!($world, $($rest),+))
+    };
+}
+
 struct State {
     // Renderer
     size: winit::dpi::PhysicalSize<u32>,
@@ -396,23 +412,12 @@ impl State {
             depth_stencil_attachment: None,
         });
 
-        let zip = self
-            .world
-            .borrow_component_vec::<MeshComponent>()
-            .unwrap()
-            .iter()
-            .zip(
-                self.world
-                    .borrow_component_vec::<MaterialComponent>()
-                    .unwrap()
-                    .iter()
-                    .zip(
-                        self.world
-                            .borrow_component_vec::<GlobalUniformComponent>()
-                            .unwrap()
-                            .iter(),
-                    ),
-            );
+        let zip = borrow_component_vecs!(
+            self.world,
+            MeshComponent,
+            MaterialComponent,
+            GlobalUniformComponent
+        );
 
         render_pass.set_pipeline(&self.render_pipeline_component.render_pipeline);
         render_pass.set_bind_group(1, &self.camera_component.camera_bind_group, &[]);
@@ -421,7 +426,6 @@ impl State {
             Some((mesh.as_ref()?, material.as_ref()?, uniforms.as_ref()?))
         }) {
             render_pass.set_bind_group(0, &uniforms.bind_group, &[]);
-
             render_pass.set_bind_group(2, &material.bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
