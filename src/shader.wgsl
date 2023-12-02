@@ -1,5 +1,6 @@
 struct CameraUniform {
     view_proj: mat4x4<f32>,
+    eye:  vec4<f32>
 };
 
 struct VertexInput {
@@ -11,21 +12,32 @@ struct VertexOutput {
     @location(0) world_direction: vec3<f32>,
 };
 
+struct ModelUniform {
+    model: mat4x4<f32>,
+};
+
+
 @group(1) @binding(0) var<uniform> camera: CameraUniform;
+@group(3) @binding(0) var<uniform> model_uniform: ModelUniform; 
 
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
-    out.world_direction = normalize(model.position); // Use the vertex position as the direction for a sphere centered at the origin
+
+    // Apply the model matrix to transform the vertex position to world space
+    let world_position = model_uniform.model * vec4<f32>(model.position, 1.0);
+
+    // Transform the position from world space to clip space
+    out.clip_position = camera.view_proj * world_position;
+
+    // Use the transformed world position for the direction calculation
+    out.world_direction = normalize(world_position.xyz - camera.eye.xyz);
+
     return out;
 }
 
 // fragment
-
-// I am breaking these uniforms into different groups, 
-// you'll need to update your groups when finished
-@group(0) @binding(0) var<uniform> u_Color: vec4<f32>;
+@group(0) @binding(0) var<uniform> u_Color: vec4<f32>; // point prim color for now
 @group(0) @binding(1) var<uniform> u_lightDirection: vec4<f32>; // vec4 instead of 3 to be 16 bytes so its WebGL2 compliant
 
 @group(2) @binding(0) var globeTexture: texture_cube<f32>;
@@ -42,7 +54,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = 0.1;
 
     let lighting = ambient + diffuse * 0.9; // Reduce the effect of diffuse lighting slightly
-    let color = u_Color * lighting;
+    let color = vec4<f32>(0.0, 0.0, 0.0, 0.0) * lighting;
 
     let cubemap_color = textureSample(globeTexture, globeSampler, in.world_direction);
     

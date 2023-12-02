@@ -26,10 +26,14 @@ impl<'a> CameraSystem<'a> {
         wgpu::BindGroupLayout,
         CameraController,
     ) {
+        // these always need to match or else
+        let eye = [0.0, 1.0, 2.0, 0.0];
+        let camera_eye = (0.0, 1.0, 2.0);
+
         let camera = Camera {
             // position the camera one unit up and 2 units back
             // +z is out of the screen
-            eye: (0.0, 1.0, 2.0).into(),
+            eye: camera_eye.into(),
             // have it look at the origin
             target: (0.0, 0.0, 0.0).into(),
             // which way is "up"
@@ -40,7 +44,7 @@ impl<'a> CameraSystem<'a> {
             zfar: 100.0,
         };
 
-        let mut camera_uniform = CameraUniform::new();
+        let mut camera_uniform = CameraUniform::new(eye);
         camera_uniform.update_view_proj(&camera);
 
         let camera_buffer = CameraSystem::create_uniform_buffer(self.device, &camera_uniform);

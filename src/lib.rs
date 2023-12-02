@@ -1,8 +1,9 @@
 mod components;
 mod systems;
 
+use cgmath::SquareMatrix;
 use components::{
-    camera::CameraComponent,
+    camera::{CameraComponent, IDENTITY_MATRIX_4},
     global_uniform::{self, GlobalUniformComponent},
     material::MaterialComponent,
     mesh::{MeshComponent, Vertex},
@@ -144,22 +145,35 @@ macro_rules! borrow_component_vecs {
     };
 }
 
+// this belongs somewhere else like serialization util or something
+fn matrix4_to_array(mat: cgmath::Matrix4<f32>) -> [[f32; 4]; 4] {
+    let m: [[f32; 4]; 4] = mat.into();
+    [
+        [m[0][0], m[0][1], m[0][2], m[0][3]],
+        [m[1][0], m[1][1], m[1][2], m[1][3]],
+        [m[2][0], m[2][1], m[2][2], m[2][3]],
+        [m[3][0], m[3][1], m[3][2], m[3][3]],
+    ]
+}
+
 struct State {
-    // Renderer
+    // renderer
     size: winit::dpi::PhysicalSize<u32>,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
 
-    // Components (these will go inside world next)
-    // sphere_mesh_component: MeshComponent,
-    camera_component: CameraComponent,
-    // globe_material_component: MaterialComponent,
-    // global_uniforms_component: GlobalUniformComponent,
-    render_pipeline_component: RenderPipelineComponent,
-
+    // scene
     world: World,
+
+    // components that I am unsure of how to deal with
+    camera_component: CameraComponent,
+    render_pipeline_component: RenderPipelineComponent,
+    global_uniforms_component: GlobalUniformComponent,
+
+    // FOR DEBUGGING ONLY
+    globe_material_component: MaterialComponent,
 }
 
 impl State {
@@ -205,11 +219,40 @@ impl State {
 
         // MESHES
         let mesh_system = MeshSystem::new(&device);
-        let (vertices_vec, indices_vec) = MeshSystem::generate_sphere_mesh();
-        let sphere_mesh_component = MeshComponent {
-            vertex_buffer: mesh_system.create_vertex_buffer(&vertices_vec.as_slice()),
-            index_buffer: mesh_system.create_index_buffer(&indices_vec.as_slice()),
-            num_indices: indices_vec.len() as u32,
+
+        // globe
+        let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
+
+        let globe_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
+        let globe_matrix_bind_group = mesh_system
+            .create_mode_matrix_bind_group(&globe_matrix_bind_group_layout, globe_matrix.clone());
+
+        let (globe_vertices_vec, globe_indices_vec) = MeshSystem::generate_sphere_mesh(100.0, 90);
+        let globe_mesh_component = MeshComponent {
+            vertex_buffer: mesh_system.create_vertex_buffer(&globe_vertices_vec.as_slice()),
+            index_buffer: mesh_system.create_index_buffer(&globe_indices_vec.as_slice()),
+            num_indices: globe_indices_vec.len() as u32,
+            model_matrix_bind_group_layout: globe_matrix_bind_group_layout,
+            model_matrix_bind_group: globe_matrix_bind_group,
+            model_matrix: globe_matrix,
+        };
+
+        // point
+        let translation2 = cgmath::Vector3::new(-220.0, 0.0, 0.0);
+        let point_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation2));
+
+        let point_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
+        let point_matrix_bind_group = mesh_system
+            .create_mode_matrix_bind_group(&point_matrix_bind_group_layout, point_matrix.clone());
+
+        let (point_vertices_vec, point_indices_vec) = MeshSystem::generate_sphere_mesh(10.0, 10);
+        let point_mesh_component = MeshComponent {
+            vertex_buffer: mesh_system.create_vertex_buffer(&point_vertices_vec.as_slice()),
+            index_buffer: mesh_system.create_index_buffer(&point_indices_vec.as_slice()),
+            num_indices: point_indices_vec.len() as u32,
+            model_matrix_bind_group_layout: point_matrix_bind_group_layout,
+            model_matrix_bind_group: point_matrix_bind_group,
+            model_matrix: point_matrix,
         };
 
         // MATERIALS
@@ -223,6 +266,7 @@ impl State {
             include_bytes!("./assets/6.png"),
         ]);
 
+        // THIS SHOULD NOT BE GLOBAL, FOR DEBUGGING OF SECOND ENTITY ONLY
         let (globe_materal_bind_group, globe_material_bind_group_layout) =
             material_system.create_cube_map_texture(image_data);
         let globe_material_component = MaterialComponent {
@@ -258,15 +302,21 @@ impl State {
             bind_group_layout: uniforms_bind_group_layout,
         };
 
-        // RENDER PIPELINE (TODO)
+        // RENDER_PIPELINE
         let render_pipeline_system = RenderPipelineSystem::new(&device);
+
         // this list feels like it should be generated in world to be dynamic
         // but I am leaving it outside for now and hardcoding.
-        let render_pipeline_layout = render_pipeline_system.create_render_pipeline_layout(&[
+        let layouts: &[&wgpu::BindGroupLayout] = &[
+            // these are hardcoded
             &global_uniforms_component.bind_group_layout,
             &camera_component.camera_bind_group_layout,
             &globe_material_component.bind_group_layout,
-        ]);
+            &globe_mesh_component.model_matrix_bind_group_layout,
+            // these are dynamic
+        ];
+
+        let render_pipeline_layout = render_pipeline_system.create_render_pipeline_layout(layouts);
         let render_pipeline = render_pipeline_system.create_render_pipeline(
             &render_pipeline_layout,
             &shader,
@@ -279,10 +329,13 @@ impl State {
         };
 
         let mut world = World::new();
+
         let globe_entity = world.new_entity();
-        world.add_component_to_entity(globe_entity, sphere_mesh_component);
-        world.add_component_to_entity(globe_entity, global_uniforms_component); //this doesn't really make sense to place into a single entity... it just shouldn't be global and a system should act on the uniform per entity!
-        world.add_component_to_entity(globe_entity, globe_material_component);
+        world.add_component_to_entity(globe_entity, globe_mesh_component);
+        // world.add_component_to_entity(globe_entity, globe_material_component);
+
+        let point_entity = world.new_entity();
+        world.add_component_to_entity(point_entity, point_mesh_component);
 
         Self {
             surface,
@@ -290,11 +343,12 @@ impl State {
             queue,
             config,
             size,
+
             render_pipeline_component,
-            // sphere_mesh_component,
             camera_component,
-            // globe_material_component,
-            // global_uniforms_component,
+            global_uniforms_component,
+            globe_material_component,
+
             world,
         }
     }
@@ -412,21 +466,16 @@ impl State {
             depth_stencil_attachment: None,
         });
 
-        let zip = borrow_component_vecs!(
-            self.world,
-            MeshComponent,
-            MaterialComponent,
-            GlobalUniformComponent
-        );
+        // let zip = borrow_component_vecs!(self.world, MeshComponent, MaterialComponent);
+        let zip = borrow_component_vecs!(self.world, MeshComponent);
 
         render_pass.set_pipeline(&self.render_pipeline_component.render_pipeline);
         render_pass.set_bind_group(1, &self.camera_component.camera_bind_group, &[]);
 
-        for (mesh, material, uniforms) in zip.filter_map(|(mesh, (material, uniforms))| {
-            Some((mesh.as_ref()?, material.as_ref()?, uniforms.as_ref()?))
-        }) {
-            render_pass.set_bind_group(0, &uniforms.bind_group, &[]);
-            render_pass.set_bind_group(2, &material.bind_group, &[]);
+        for (mesh) in zip.filter_map(|(mesh)| Some((mesh.as_ref()?))) {
+            render_pass.set_bind_group(0, &self.global_uniforms_component.bind_group, &[]);
+            render_pass.set_bind_group(2, &self.globe_material_component.bind_group, &[]);
+            render_pass.set_bind_group(3, &mesh.model_matrix_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

@@ -1,10 +1,10 @@
-pub const R: f32 = 100.0;
-pub const TOTAL: u32 = 90;
-
 pub struct MeshComponent {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
+    pub model_matrix_bind_group_layout: wgpu::BindGroupLayout,
+    pub model_matrix_bind_group: wgpu::BindGroup,
+    pub model_matrix: [[f32; 4]; 4],
 }
 
 #[repr(C)]

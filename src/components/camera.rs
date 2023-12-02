@@ -7,7 +7,7 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     0.0, 0.0, 0.5, 0.5,
     0.0, 0.0, 0.0, 1.0,
 );
-const IDENTITY_MATRIX_4: [[f32; 4]; 4] = [
+pub const IDENTITY_MATRIX_4: [[f32; 4]; 4] = [
     [1.0, 0.0, 0.0, 0.0],
     [0.0, 1.0, 0.0, 0.0],
     [0.0, 0.0, 1.0, 0.0],
@@ -136,12 +136,14 @@ pub struct CameraUniform {
     // We can't use cgmath with bytemuck directly so we'll have
     // to convert the Matrix4 into a 4x4 f32 array
     pub view_proj: [[f32; 4]; 4],
+    eye: [f32; 4],
 }
 
 impl CameraUniform {
-    pub fn new() -> Self {
+    pub fn new(eye: [f32; 4]) -> Self {
         Self {
             view_proj: IDENTITY_MATRIX_4,
+            eye,
         }
     }
 
