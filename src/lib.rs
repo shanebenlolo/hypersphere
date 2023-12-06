@@ -1,5 +1,6 @@
 mod components;
 mod systems;
+mod world;
 
 use cgmath::SquareMatrix;
 use components::{
@@ -23,6 +24,7 @@ use winit::{
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{window, KeyboardEvent};
+use world::World;
 
 pub trait Uniform {
     // only allow (multiples of?) 16 bytes of buffer
@@ -37,106 +39,6 @@ pub trait Uniform {
         buffer: &wgpu::Buffer,
         layout: &wgpu::BindGroupLayout,
     ) -> wgpu::BindGroup;
-}
-
-struct World {
-    entities_count: usize,
-    component_vecs: Vec<Box<dyn ComponentVec>>,
-}
-
-impl World {
-    pub fn new() -> Self {
-        Self {
-            entities_count: 0,
-            component_vecs: Vec::new(),
-        }
-    }
-
-    fn new_entity(&mut self) -> usize {
-        let entity_id = self.entities_count;
-        for component_vec in self.component_vecs.iter_mut() {
-            component_vec.push_none();
-        }
-        self.entities_count += 1;
-        entity_id
-    }
-
-    pub fn add_component_to_entity<ComponentType: 'static>(
-        &mut self,
-        entity: usize,
-        component: ComponentType,
-    ) {
-        for component_vec in self.component_vecs.iter_mut() {
-            if let Some(component_vec) = component_vec
-                .as_any_mut()
-                .downcast_mut::<Vec<Option<ComponentType>>>()
-            {
-                component_vec[entity] = Some(component);
-                return;
-            }
-        }
-
-        // No matching component storage exists yet, so we have to make one.
-        let mut new_component_vec: Vec<Option<ComponentType>> =
-            Vec::with_capacity(self.entities_count);
-
-        // All existing entities don't have this component, so we give them `None`
-        for _ in 0..self.entities_count {
-            new_component_vec.push(None);
-        }
-
-        // Give this Entity the Component.
-        new_component_vec[entity] = Some(component);
-        self.component_vecs.push(Box::new(new_component_vec));
-    }
-
-    //  finds and borrows the ComponentVec that matches a type
-    fn borrow_component_vec<ComponentType: 'static>(&self) -> Option<&Vec<Option<ComponentType>>> {
-        for component_vec in self.component_vecs.iter() {
-            if let Some(component_vec) = component_vec
-                .as_any()
-                .downcast_ref::<Vec<Option<ComponentType>>>()
-            {
-                return Some(component_vec);
-            }
-        }
-        None
-    }
-}
-
-trait ComponentVec {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-    fn push_none(&mut self);
-}
-
-impl<T: 'static> ComponentVec for Vec<Option<T>> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self as &mut dyn std::any::Any
-    }
-    fn push_none(&mut self) {
-        self.push(None)
-    }
-}
-
-macro_rules! borrow_component_vecs {
-    // Base case: only one component type
-    ($world:expr, $comp:ty) => {
-        $world.borrow_component_vec::<$comp>().unwrap().iter()
-    };
-
-    // Recursive case: multiple component types
-    ($world:expr, $comp:ty, $($rest:ty),+) => {
-        $world
-            .borrow_component_vec::<$comp>()
-            .unwrap()
-            .iter()
-            .zip(borrow_component_vecs!($world, $($rest),+))
-    };
 }
 
 // this belongs somewhere else like serialization util or something
@@ -329,7 +231,7 @@ impl State {
         // render_pipeline
         let point_pipeline_layouts: &[&wgpu::BindGroupLayout] = &[
             &camera_component.camera_bind_group_layout,
-            &point_material_component.bind_group_layout,
+            // &point_material_component.bind_group_layout,
             &point_mesh_component.model_matrix_bind_group_layout,
         ];
         let point_render_pipeline_layout =
@@ -347,7 +249,6 @@ impl State {
         // create entity with components
         let point_entity = world.new_entity();
         world.add_component_to_entity(point_entity, point_mesh_component);
-        world.add_component_to_entity(point_entity, point_material_component);
         world.add_component_to_entity(point_entity, point_render_pipeline_component);
 
         Self {
@@ -422,7 +323,6 @@ impl State {
             .process_key_events(event)
     }
 
-    // this will go to world I think
     fn update(&mut self) {
         self.camera_component
             .camera_controller
@@ -448,7 +348,7 @@ impl State {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         // Most modern graphics frameworks expect commands to be stored
-        //  in a command buffer before being sent to the gpu.
+        // in a command buffer before being sent to the gpu.
         // The encoder builds a command buffer that we can then send to the gpu.
         let mut encoder = self
             .device
@@ -476,29 +376,60 @@ impl State {
 
         render_pass.set_bind_group(0, &self.camera_component.camera_bind_group, &[]);
 
-        let zip = borrow_component_vecs!(
-            self.world,
-            RenderPipelineComponent,
-            MeshComponent,
-            MaterialComponent
-        );
+        // the following queries are mostly just for demonstration...
+        // earth is rendered with the first set of entity ids,
+        // the points are rendered with the second, because
+        // they have no material
 
-        for (render_pipeline, mesh, material) in
-            zip.filter_map(|(render_pipeline, (mesh, material))| {
-                Some((
-                    render_pipeline.as_ref()?,
-                    mesh.as_ref()?,
-                    material.as_ref()?,
-                ))
-            })
-        {
-            render_pass.set_pipeline(&render_pipeline.render_pipeline);
-            render_pass.set_bind_group(1, &material.bind_group, &[]);
-            render_pass.set_bind_group(2, &mesh.model_matrix_bind_group, &[]);
+        let entity_ids_with_mesh_and_material = self
+            .world
+            .query_entities_with_material_and_mesh::<MeshComponent, MaterialComponent>();
 
-            render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+        for entity_id in entity_ids_with_mesh_and_material {
+            // Retrieve components for the current entity
+            let render_pipeline = self
+                .world
+                .get_component::<RenderPipelineComponent>(entity_id);
+            let mesh = self.world.get_component::<MeshComponent>(entity_id);
+            let material = self.world.get_component::<MaterialComponent>(entity_id);
+
+            // Check if all components are available
+            if let (Some(render_pipeline), Some(mesh), Some(material)) =
+                (render_pipeline, mesh, material)
+            {
+                render_pass.set_pipeline(&render_pipeline.render_pipeline);
+                render_pass.set_bind_group(1, &material.bind_group, &[]);
+                render_pass.set_bind_group(2, &mesh.model_matrix_bind_group, &[]);
+
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+            }
+        }
+
+        let entity_ids_with_mesh_no_material = self
+            .world
+            .query_entities_with_mesh_but_no_material::<MeshComponent, MaterialComponent>();
+
+        for entity_id in entity_ids_with_mesh_no_material {
+            // Retrieve components for the current entity
+            let render_pipeline = self
+                .world
+                .get_component::<RenderPipelineComponent>(entity_id);
+            let mesh = self.world.get_component::<MeshComponent>(entity_id);
+
+            // Check if both components are available
+            if let (Some(render_pipeline), Some(mesh)) = (render_pipeline, mesh) {
+                render_pass.set_pipeline(&render_pipeline.render_pipeline);
+                // Material bind group is not set since these entities don't have a material
+                render_pass.set_bind_group(1, &mesh.model_matrix_bind_group, &[]);
+
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+            }
         }
 
         drop(render_pass);
@@ -530,7 +461,7 @@ pub async fn run() {
         // Winit prevents sizing with CSS, so we have to
         // set the size manually when on web.
         use winit::dpi::PhysicalSize;
-        window.set_inner_size(PhysicalSize::new(450, 400));
+        window.set_inner_size(PhysicalSize::new(1080, 1080));
 
         use winit::platform::web::WindowExtWebSys;
         web_sys::window()

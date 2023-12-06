@@ -31,7 +31,7 @@ impl<'a> MaterialSystem<'a> {
             depth_or_array_layers: 1, // Single layer for each face
         };
 
-        let cube_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        let cube_map_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
                 width: dimensions.0,
                 height: dimensions.1,
@@ -42,7 +42,7 @@ impl<'a> MaterialSystem<'a> {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("Cube Texture"),
+            label: Some("Cube Map Texture"),
             view_formats: &[],
         });
 
@@ -50,7 +50,7 @@ impl<'a> MaterialSystem<'a> {
         for (i, data) in image_data.iter().enumerate() {
             self.queue.write_texture(
                 wgpu::ImageCopyTexture {
-                    texture: &cube_texture,
+                    texture: &cube_map_texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d {
                         x: 0,
@@ -69,8 +69,8 @@ impl<'a> MaterialSystem<'a> {
             );
         }
 
-        let cube_material_view = cube_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("Cube Material View"),
+        let cube_map_material_view = cube_map_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Cube Map Material View"),
             dimension: Some(wgpu::TextureViewDimension::Cube),
             format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
             aspect: wgpu::TextureAspect::All,
@@ -80,8 +80,8 @@ impl<'a> MaterialSystem<'a> {
             array_layer_count: Some(6),
         });
 
-        let cube_material_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Cube Material Sampler"),
+        let cube_map_material_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Cube Map Material Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -91,10 +91,10 @@ impl<'a> MaterialSystem<'a> {
             ..Default::default()
         });
 
-        let cube_material_bind_group_layout =
+        let cube_map_material_bind_group_layout =
             self.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Cube Material bind group layout"),
+                    label: Some("Cube Map Material bind group layout"),
                     entries: &[
                         // texture
                         wgpu::BindGroupLayoutEntry {
@@ -119,20 +119,24 @@ impl<'a> MaterialSystem<'a> {
                     ],
                 });
 
-        let cube_material_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &cube_material_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&cube_material_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&cube_material_sampler),
-                },
-            ],
-            label: Some("Cube Material bind group"),
-        });
-        (cube_material_bind_group, cube_material_bind_group_layout)
+        let cube_map_material_bind_group =
+            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &cube_map_material_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&cube_map_material_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&cube_map_material_sampler),
+                    },
+                ],
+                label: Some("Cube Map Material bind group"),
+            });
+        (
+            cube_map_material_bind_group,
+            cube_map_material_bind_group_layout,
+        )
     }
 }

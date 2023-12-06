@@ -24,7 +24,7 @@ impl<'a> MeshSystem<'a> {
                     },
                     count: None,
                 }],
-                label: Some("model_matrix_bind_group_layout"),
+                label: Some("Mesh Bind Group Layout"),
             })
     }
 
@@ -36,7 +36,7 @@ impl<'a> MeshSystem<'a> {
         let buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Model Matrix Buffer"),
+                label: Some("Mesh Buffer"),
                 contents: bytemuck::cast_slice(&[model_matrix]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
@@ -47,7 +47,7 @@ impl<'a> MeshSystem<'a> {
                 binding: 0,
                 resource: buffer.as_entire_binding(),
             }],
-            label: Some("Model Matrix Bind Group"),
+            label: Some("Mesh Bind Group"),
         })
     }
 

@@ -18,7 +18,7 @@ struct ModelUniform {
 
 
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
-@group(2) @binding(0) var<uniform> model_uniform: ModelUniform; 
+@group(1) @binding(0) var<uniform> model_uniform: ModelUniform; 
 
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
@@ -36,15 +36,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     return out;
 }
 
-// fragment
-@group(1) @binding(0) var globeTexture: texture_cube<f32>;
-@group(1) @binding(1) var globeSampler: sampler;
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Sample the texture using the texture coordinates from the VertexOutput
-    let cubemap_color = textureSample(globeTexture, globeSampler, in.world_direction);
-
-    // Return the sampled color directly without any lighting calculations
-    return cubemap_color;
+   return vec4<f32>(1.0, 1.0, 0.0, 1.0);
 }
