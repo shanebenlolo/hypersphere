@@ -48,7 +48,22 @@ impl<'a> CameraSystem<'a> {
         camera_uniform.update_view_proj(&camera);
 
         let camera_buffer = CameraSystem::create_uniform_buffer(self.device, &camera_uniform);
-        let camera_bind_group_layout = CameraSystem::create_uniform_bind_group_layout(self.device);
+        let camera_bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: Some("Camera Component Uniform Bind Group Layout"),
+                });
+
         let camera_bind_group = CameraSystem::create_uniform_bind_group(
             self.device,
             &camera_buffer,
@@ -75,21 +90,7 @@ impl<'a> Uniform for CameraSystem<'a> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         })
     }
-    fn create_uniform_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("Camera Component Uniform Bind Group Layout"),
-        })
-    }
+
     fn create_uniform_bind_group(
         device: &wgpu::Device,
         buffer: &wgpu::Buffer,

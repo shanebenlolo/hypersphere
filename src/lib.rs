@@ -3,22 +3,16 @@ mod systems;
 
 use cgmath::SquareMatrix;
 use components::{
-    camera::{CameraComponent, IDENTITY_MATRIX_4},
-    global_uniform::{self, GlobalUniformComponent},
-    material::MaterialComponent,
-    mesh::{MeshComponent, Vertex},
-    render_pipeline::{self, RenderPipelineComponent},
+    camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
+    render_pipelines::RenderPipelineComponent,
 };
-use image::{ImageBuffer, Rgba};
-
 use systems::{
     camera::CameraSystem,
-    global_uniform::{GlobalUniformSystem, UNIFORMS},
     material::MaterialSystem,
     mesh::MeshSystem,
-    render_pipeline::RenderPipelineSystem,
+    render_pipelines::{GlobeRenderPipelineSystem, PointRenderPipelineSystem},
 };
-use wgpu::{util::DeviceExt, Surface};
+use wgpu::Surface;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -36,7 +30,7 @@ pub trait Uniform {
     // should probably make T enforce this.
     fn create_uniform_buffer<T: bytemuck::Pod>(device: &wgpu::Device, data: &T) -> wgpu::Buffer;
 
-    fn create_uniform_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
+    // fn create_uniform_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
 
     fn create_uniform_bind_group(
         device: &wgpu::Device,
@@ -167,13 +161,10 @@ struct State {
     // scene
     world: World,
 
-    // components that I am unsure of how to deal with
+    // I don't think this needs to
+    // be a "component" but we will
+    // leave it as such for the time being
     camera_component: CameraComponent,
-    render_pipeline_component: RenderPipelineComponent,
-    global_uniforms_component: GlobalUniformComponent,
-
-    // FOR DEBUGGING ONLY
-    globe_material_component: MaterialComponent,
 }
 
 impl State {
@@ -213,50 +204,13 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-
         // there should be a seperation of everything above and below this comment
 
-        // MESHES
-        let mesh_system = MeshSystem::new(&device);
-
-        // globe
-        let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
-
-        let globe_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
-        let globe_matrix_bind_group = mesh_system
-            .create_mode_matrix_bind_group(&globe_matrix_bind_group_layout, globe_matrix.clone());
-
-        let (globe_vertices_vec, globe_indices_vec) = MeshSystem::generate_sphere_mesh(100.0, 90);
-        let globe_mesh_component = MeshComponent {
-            vertex_buffer: mesh_system.create_vertex_buffer(&globe_vertices_vec.as_slice()),
-            index_buffer: mesh_system.create_index_buffer(&globe_indices_vec.as_slice()),
-            num_indices: globe_indices_vec.len() as u32,
-            model_matrix_bind_group_layout: globe_matrix_bind_group_layout,
-            model_matrix_bind_group: globe_matrix_bind_group,
-            model_matrix: globe_matrix,
-        };
-
-        // point
-        let translation2 = cgmath::Vector3::new(-220.0, 0.0, 0.0);
-        let point_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation2));
-
-        let point_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
-        let point_matrix_bind_group = mesh_system
-            .create_mode_matrix_bind_group(&point_matrix_bind_group_layout, point_matrix.clone());
-
-        let (point_vertices_vec, point_indices_vec) = MeshSystem::generate_sphere_mesh(10.0, 10);
-        let point_mesh_component = MeshComponent {
-            vertex_buffer: mesh_system.create_vertex_buffer(&point_vertices_vec.as_slice()),
-            index_buffer: mesh_system.create_index_buffer(&point_indices_vec.as_slice()),
-            num_indices: point_indices_vec.len() as u32,
-            model_matrix_bind_group_layout: point_matrix_bind_group_layout,
-            model_matrix_bind_group: point_matrix_bind_group,
-            model_matrix: point_matrix,
-        };
-
-        // MATERIALS
-        let material_system = MaterialSystem::new(&device, &queue);
+        // -------------------------------------------
+        // THESE ARE CURRENTLY GLOBAL BUT SHOULDN'T BE
+        // -------------------------------------------
+        let color: [f32; 4] = [0.0, 0.0, 0.0, 0.0]; // Color as RGBA
+        let light_direction: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
         let image_data = MaterialSystem::cube_map_buffer_from_urls(vec![
             include_bytes!("./assets/1.png"),
             include_bytes!("./assets/2.png"),
@@ -265,14 +219,16 @@ impl State {
             include_bytes!("./assets/5.png"),
             include_bytes!("./assets/6.png"),
         ]);
+        // -------------------------------------------
+        // THESE ARE CURRENTLY GLOBAL BUT SHOULDN'T BE
+        // -------------------------------------------
 
-        // THIS SHOULD NOT BE GLOBAL, FOR DEBUGGING OF SECOND ENTITY ONLY
-        let (globe_materal_bind_group, globe_material_bind_group_layout) =
-            material_system.create_cube_map_texture(image_data);
-        let globe_material_component = MaterialComponent {
-            bind_group: globe_materal_bind_group,
-            bind_group_layout: globe_material_bind_group_layout,
-        };
+        // init world and systems
+        let mut world = World::new();
+        let mesh_system = MeshSystem::new(&device);
+        let material_system = MaterialSystem::new(&device, &queue);
+        let globe_render_pipeline_system = GlobeRenderPipelineSystem::new(&device);
+        let point_render_pipeline_system = PointRenderPipelineSystem::new(&device);
 
         // CAMERA
         let camera_system = CameraSystem::new(&device);
@@ -293,49 +249,106 @@ impl State {
             camera_controller,
         };
 
-        // GLOBAL UNIFORMS
-        let uniforms_system = GlobalUniformSystem::new(&device);
-        let (uniforms_bind_group, uniforms_bind_group_layout) =
-            uniforms_system.create_global_uniforms(UNIFORMS);
-        let global_uniforms_component = GlobalUniformComponent {
-            bind_group: uniforms_bind_group,
-            bind_group_layout: uniforms_bind_group_layout,
+        // GLOBE
+
+        // mesh
+        let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
+        let globe_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
+        let globe_matrix_bind_group = mesh_system
+            .create_mode_matrix_bind_group(&globe_matrix_bind_group_layout, globe_matrix.clone());
+        let (globe_vertices_vec, globe_indices_vec) = MeshSystem::generate_sphere_mesh(100.0, 90);
+        let globe_mesh_component = MeshComponent {
+            vertex_buffer: mesh_system.create_vertex_buffer(&globe_vertices_vec.as_slice()),
+            index_buffer: mesh_system.create_index_buffer(&globe_indices_vec.as_slice()),
+            num_indices: globe_indices_vec.len() as u32,
+            model_matrix_bind_group_layout: globe_matrix_bind_group_layout,
+            model_matrix_bind_group: globe_matrix_bind_group,
+            model_matrix: globe_matrix,
+        };
+        // material
+        let (materal_bind_group, material_bind_group_layout) =
+            material_system.create_cube_map_texture(image_data.clone());
+        let globe_material_component = MaterialComponent {
+            bind_group: materal_bind_group,
+            bind_group_layout: material_bind_group_layout,
+            uniforms: vec![color, light_direction],
+            shader: device.create_shader_module(wgpu::include_wgsl!("./shaders/globe_shader.wgsl")),
         };
 
-        // RENDER_PIPELINE
-        let render_pipeline_system = RenderPipelineSystem::new(&device);
-
-        // this list feels like it should be generated in world to be dynamic
-        // but I am leaving it outside for now and hardcoding.
-        let layouts: &[&wgpu::BindGroupLayout] = &[
-            // these are hardcoded
-            &global_uniforms_component.bind_group_layout,
+        // render_pipeline
+        let globe_pipeline_layouts: &[&wgpu::BindGroupLayout] = &[
             &camera_component.camera_bind_group_layout,
             &globe_material_component.bind_group_layout,
             &globe_mesh_component.model_matrix_bind_group_layout,
-            // these are dynamic
         ];
-
-        let render_pipeline_layout = render_pipeline_system.create_render_pipeline_layout(layouts);
-        let render_pipeline = render_pipeline_system.create_render_pipeline(
-            &render_pipeline_layout,
-            &shader,
+        let globe_render_pipeline_layout =
+            globe_render_pipeline_system.layout_desc(globe_pipeline_layouts);
+        let globe_render_pipeline = globe_render_pipeline_system.pipeline_desc(
+            &globe_render_pipeline_layout,
+            &globe_material_component.shader,
             config.format,
         );
-
-        let render_pipeline_component = RenderPipelineComponent {
-            render_pipeline,
-            render_pipeline_layout,
+        let globe_render_pipeline_component = RenderPipelineComponent {
+            render_pipeline: globe_render_pipeline,
+            render_pipeline_layout: globe_render_pipeline_layout,
         };
 
-        let mut world = World::new();
-
+        // create entity with components
         let globe_entity = world.new_entity();
         world.add_component_to_entity(globe_entity, globe_mesh_component);
-        // world.add_component_to_entity(globe_entity, globe_material_component);
+        world.add_component_to_entity(globe_entity, globe_material_component);
+        world.add_component_to_entity(globe_entity, globe_render_pipeline_component);
 
+        // POINTS
+        // mesh
+        let translation2 = cgmath::Vector3::new(-220.0, 0.0, 0.0);
+        let point_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation2));
+        let point_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
+        let point_matrix_bind_group = mesh_system
+            .create_mode_matrix_bind_group(&point_matrix_bind_group_layout, point_matrix.clone());
+        let (point_vertices_vec, point_indices_vec) = MeshSystem::generate_sphere_mesh(10.0, 10);
+        let point_mesh_component = MeshComponent {
+            vertex_buffer: mesh_system.create_vertex_buffer(&point_vertices_vec.as_slice()),
+            index_buffer: mesh_system.create_index_buffer(&point_indices_vec.as_slice()),
+            num_indices: point_indices_vec.len() as u32,
+            model_matrix_bind_group_layout: point_matrix_bind_group_layout,
+            model_matrix_bind_group: point_matrix_bind_group,
+            model_matrix: point_matrix,
+        };
+
+        // material
+        let (materal_bind_group, material_bind_group_layout) =
+            material_system.create_cube_map_texture(image_data);
+        let point_material_component = MaterialComponent {
+            bind_group: materal_bind_group,
+            bind_group_layout: material_bind_group_layout,
+            uniforms: vec![color, light_direction],
+            shader: device.create_shader_module(wgpu::include_wgsl!("./shaders/point_shader.wgsl")),
+        };
+
+        // render_pipeline
+        let point_pipeline_layouts: &[&wgpu::BindGroupLayout] = &[
+            &camera_component.camera_bind_group_layout,
+            &point_material_component.bind_group_layout,
+            &point_mesh_component.model_matrix_bind_group_layout,
+        ];
+        let point_render_pipeline_layout =
+            point_render_pipeline_system.layout_desc(point_pipeline_layouts);
+        let point_render_pipeline = point_render_pipeline_system.pipeline_desc(
+            &point_render_pipeline_layout,
+            &point_material_component.shader,
+            config.format,
+        );
+        let point_render_pipeline_component = RenderPipelineComponent {
+            render_pipeline: point_render_pipeline,
+            render_pipeline_layout: point_render_pipeline_layout,
+        };
+
+        // create entity with components
         let point_entity = world.new_entity();
         world.add_component_to_entity(point_entity, point_mesh_component);
+        world.add_component_to_entity(point_entity, point_material_component);
+        world.add_component_to_entity(point_entity, point_render_pipeline_component);
 
         Self {
             surface,
@@ -343,12 +356,7 @@ impl State {
             queue,
             config,
             size,
-
-            render_pipeline_component,
             camera_component,
-            global_uniforms_component,
-            globe_material_component,
-
             world,
         }
     }
@@ -466,16 +474,27 @@ impl State {
             depth_stencil_attachment: None,
         });
 
-        // let zip = borrow_component_vecs!(self.world, MeshComponent, MaterialComponent);
-        let zip = borrow_component_vecs!(self.world, MeshComponent);
+        render_pass.set_bind_group(0, &self.camera_component.camera_bind_group, &[]);
 
-        render_pass.set_pipeline(&self.render_pipeline_component.render_pipeline);
-        render_pass.set_bind_group(1, &self.camera_component.camera_bind_group, &[]);
+        let zip = borrow_component_vecs!(
+            self.world,
+            RenderPipelineComponent,
+            MeshComponent,
+            MaterialComponent
+        );
 
-        for (mesh) in zip.filter_map(|(mesh)| Some((mesh.as_ref()?))) {
-            render_pass.set_bind_group(0, &self.global_uniforms_component.bind_group, &[]);
-            render_pass.set_bind_group(2, &self.globe_material_component.bind_group, &[]);
-            render_pass.set_bind_group(3, &mesh.model_matrix_bind_group, &[]);
+        for (render_pipeline, mesh, material) in
+            zip.filter_map(|(render_pipeline, (mesh, material))| {
+                Some((
+                    render_pipeline.as_ref()?,
+                    mesh.as_ref()?,
+                    material.as_ref()?,
+                ))
+            })
+        {
+            render_pass.set_pipeline(&render_pipeline.render_pipeline);
+            render_pass.set_bind_group(1, &material.bind_group, &[]);
+            render_pass.set_bind_group(2, &mesh.model_matrix_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
