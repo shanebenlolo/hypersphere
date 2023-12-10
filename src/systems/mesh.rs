@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::components::mesh::Vertex;
+use crate::components::mesh::{BillboardVertex, Vertex};
 
 pub struct MeshSystem<'a> {
     device: &'a wgpu::Device,
@@ -53,7 +53,10 @@ impl<'a> MeshSystem<'a> {
 
     // keeping these decoupled and not iterative until
     // we have more geometry
-    pub fn create_vertex_buffer(&self, data: &[Vertex]) -> wgpu::Buffer {
+    pub fn create_vertex_buffer<T>(&self, data: &[T]) -> wgpu::Buffer
+    where
+        T: bytemuck::Pod,
+    {
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
@@ -114,5 +117,62 @@ impl<'a> MeshSystem<'a> {
         }
 
         (vertices, indices)
+    }
+
+    pub fn generate_rectangle_mesh(
+        lat: f32,
+        lon: f32,
+        size: (f32, f32),
+    ) -> (Vec<BillboardVertex>, Vec<u32>) {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        let (width, height) = size;
+        let half_width = width / 2.0;
+        let half_height = height / 2.0;
+
+        // Define four corners of the rectangle
+        // We'll later rotate these to match the specified latitude and longitude
+        vertices.push(BillboardVertex {
+            position: [-half_width, -half_height, 0.0], // Bottom left
+            tex_coords: [0.0, 0.0],                     // Texture coordinates
+        });
+        vertices.push(BillboardVertex {
+            position: [half_width, -half_height, 0.0], // Bottom right
+            tex_coords: [1.0, 0.0],                    // Texture coordinates
+        });
+        vertices.push(BillboardVertex {
+            position: [half_width, half_height, 0.0], // Top right
+            tex_coords: [1.0, 1.0],                   // Texture coordinates
+        });
+        vertices.push(BillboardVertex {
+            position: [-half_width, half_height, 0.0], // Top left
+            tex_coords: [0.0, 1.0],                    // Texture coordinates
+        });
+
+        // Define indices for two triangles that make up the rectangle
+        indices.push(0);
+        indices.push(1);
+        indices.push(2);
+        indices.push(0);
+        indices.push(2);
+        indices.push(3);
+
+        (vertices, indices)
+    }
+
+    pub fn degrees_to_radians(degrees: f32) -> f32 {
+        degrees * (std::f32::consts::PI / 180.0)
+    }
+
+    pub fn lat_lon_to_cartesian(lat: f32, lon: f32, radius: f32) -> (f32, f32, f32) {
+        let lat_rad = MeshSystem::degrees_to_radians(lat);
+        let lon_rad = MeshSystem::degrees_to_radians(lon);
+
+        let x = radius * lat_rad.cos() * lon_rad.cos();
+        let y = radius * lat_rad.cos() * lon_rad.sin();
+        let z = radius * lat_rad.sin();
+
+        (x, y, z)
     }
 }

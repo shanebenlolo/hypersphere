@@ -11,7 +11,9 @@ use systems::{
     camera::CameraSystem,
     material::MaterialSystem,
     mesh::MeshSystem,
-    render_pipelines::{GlobeRenderPipelineSystem, PointRenderPipelineSystem},
+    render_pipelines::{
+        BillboardRenderPipelineSystem, GlobeRenderPipelineSystem, PointRenderPipelineSystem,
+    },
 };
 use wgpu::Surface;
 use winit::{
@@ -25,21 +27,6 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{window, KeyboardEvent};
 use world::World;
-
-pub trait Uniform {
-    // only allow (multiples of?) 16 bytes of buffer
-    // data to be compliant with WebGL2.
-    // should probably make T enforce this.
-    fn create_uniform_buffer<T: bytemuck::Pod>(device: &wgpu::Device, data: &T) -> wgpu::Buffer;
-
-    // fn create_uniform_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
-
-    fn create_uniform_bind_group(
-        device: &wgpu::Device,
-        buffer: &wgpu::Buffer,
-        layout: &wgpu::BindGroupLayout,
-    ) -> wgpu::BindGroup;
-}
 
 // this belongs somewhere else like serialization util or something
 fn matrix4_to_array(mat: cgmath::Matrix4<f32>) -> [[f32; 4]; 4] {
@@ -63,9 +50,6 @@ struct State {
     // scene
     world: World,
 
-    // I don't think this needs to
-    // be a "component" but we will
-    // leave it as such for the time being
     camera_component: CameraComponent,
 }
 
@@ -113,7 +97,7 @@ impl State {
         // -------------------------------------------
         let color: [f32; 4] = [0.0, 0.0, 0.0, 0.0]; // Color as RGBA
         let light_direction: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
-        let image_data = MaterialSystem::cube_map_buffer_from_urls(vec![
+        let globe_image_data = MaterialSystem::cube_map_buffer_from_urls(vec![
             include_bytes!("./assets/1.png"),
             include_bytes!("./assets/2.png"),
             include_bytes!("./assets/3.png"),
@@ -121,6 +105,10 @@ impl State {
             include_bytes!("./assets/5.png"),
             include_bytes!("./assets/6.png"),
         ]);
+        let billboard_image_data = include_bytes!("./assets/billboard.jpg");
+        let billboard_dyn_image = image::load_from_memory(billboard_image_data)
+            .expect("Failed to load image from memory");
+        let billboard_image_buffer = billboard_dyn_image.to_rgba8();
         // -------------------------------------------
         // THESE ARE CURRENTLY GLOBAL BUT SHOULDN'T BE
         // -------------------------------------------
@@ -130,7 +118,7 @@ impl State {
         let mesh_system = MeshSystem::new(&device);
         let material_system = MaterialSystem::new(&device, &queue);
         let globe_render_pipeline_system = GlobeRenderPipelineSystem::new(&device);
-        let point_render_pipeline_system = PointRenderPipelineSystem::new(&device);
+        let billboard_render_pipeline_system = BillboardRenderPipelineSystem::new(&device);
 
         // CAMERA
         let camera_system = CameraSystem::new(&device);
@@ -152,8 +140,10 @@ impl State {
         };
 
         // GLOBE
-
         // mesh
+
+        let globe_radius = 100.0;
+
         let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
         let globe_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
         let globe_matrix_bind_group = mesh_system
@@ -169,7 +159,7 @@ impl State {
         };
         // material
         let (materal_bind_group, material_bind_group_layout) =
-            material_system.create_cube_map_texture(image_data.clone());
+            material_system.create_cube_map_texture(globe_image_data.clone());
         let globe_material_component = MaterialComponent {
             bind_group: materal_bind_group,
             bind_group_layout: material_bind_group_layout,
@@ -201,55 +191,69 @@ impl State {
         world.add_component_to_entity(globe_entity, globe_material_component);
         world.add_component_to_entity(globe_entity, globe_render_pipeline_component);
 
-        // POINTS
+        // BILLBOARDS
         // mesh
-        let translation2 = cgmath::Vector3::new(-220.0, 0.0, 0.0);
-        let point_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation2));
-        let point_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
-        let point_matrix_bind_group = mesh_system
-            .create_mode_matrix_bind_group(&point_matrix_bind_group_layout, point_matrix.clone());
-        let (point_vertices_vec, point_indices_vec) = MeshSystem::generate_sphere_mesh(10.0, 10);
-        let point_mesh_component = MeshComponent {
-            vertex_buffer: mesh_system.create_vertex_buffer(&point_vertices_vec.as_slice()),
-            index_buffer: mesh_system.create_index_buffer(&point_indices_vec.as_slice()),
-            num_indices: point_indices_vec.len() as u32,
-            model_matrix_bind_group_layout: point_matrix_bind_group_layout,
-            model_matrix_bind_group: point_matrix_bind_group,
-            model_matrix: point_matrix,
+        // let translation2 = cgmath::Vector3::new(-220.0, 0.0, 0.0);
+        // let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation2));
+
+        let billboard_lat = 27.0;
+        let billboard_lon = 81.0;
+        let billboard_size = (10.0, 10.0);
+        let (x, y, z) =
+            MeshSystem::lat_lon_to_cartesian(billboard_lat, billboard_lon, globe_radius);
+        let translation = cgmath::Vector3::new(x, y, z);
+        let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation));
+        let billboard_matrix_bind_group_layout =
+            mesh_system.create_model_matrix_bind_group_layout();
+        let billboard_matrix_bind_group = mesh_system.create_mode_matrix_bind_group(
+            &billboard_matrix_bind_group_layout,
+            billboard_matrix.clone(),
+        );
+        let (billboard_vertices_vec, billboard_indices_vec) =
+            MeshSystem::generate_rectangle_mesh(billboard_lat, billboard_lon, billboard_size);
+        let billboard_mesh_component = MeshComponent {
+            vertex_buffer: mesh_system.create_vertex_buffer(&billboard_vertices_vec.as_slice()),
+            index_buffer: mesh_system.create_index_buffer(&billboard_indices_vec.as_slice()),
+            num_indices: billboard_indices_vec.len() as u32,
+            model_matrix_bind_group_layout: billboard_matrix_bind_group_layout,
+            model_matrix_bind_group: billboard_matrix_bind_group,
+            model_matrix: billboard_matrix,
         };
 
         // material
         let (materal_bind_group, material_bind_group_layout) =
-            material_system.create_cube_map_texture(image_data);
-        let point_material_component = MaterialComponent {
+            material_system.create_2d_texture(billboard_image_buffer);
+        let billboard_material_component = MaterialComponent {
             bind_group: materal_bind_group,
             bind_group_layout: material_bind_group_layout,
             uniforms: vec![color, light_direction],
-            shader: device.create_shader_module(wgpu::include_wgsl!("./shaders/point_shader.wgsl")),
+            shader: device
+                .create_shader_module(wgpu::include_wgsl!("./shaders/billboard_shader.wgsl")),
         };
 
         // render_pipeline
-        let point_pipeline_layouts: &[&wgpu::BindGroupLayout] = &[
+        let billboard_pipeline_layouts: &[&wgpu::BindGroupLayout] = &[
             &camera_component.camera_bind_group_layout,
-            // &point_material_component.bind_group_layout,
-            &point_mesh_component.model_matrix_bind_group_layout,
+            &billboard_material_component.bind_group_layout,
+            &billboard_mesh_component.model_matrix_bind_group_layout,
         ];
-        let point_render_pipeline_layout =
-            point_render_pipeline_system.layout_desc(point_pipeline_layouts);
-        let point_render_pipeline = point_render_pipeline_system.pipeline_desc(
-            &point_render_pipeline_layout,
-            &point_material_component.shader,
+        let billboard_render_pipeline_layout =
+            billboard_render_pipeline_system.layout_desc(billboard_pipeline_layouts);
+        let billboard_render_pipeline = billboard_render_pipeline_system.pipeline_desc(
+            &billboard_render_pipeline_layout,
+            &billboard_material_component.shader,
             config.format,
         );
-        let point_render_pipeline_component = RenderPipelineComponent {
-            render_pipeline: point_render_pipeline,
-            render_pipeline_layout: point_render_pipeline_layout,
+        let billboard_render_pipeline_component = RenderPipelineComponent {
+            render_pipeline: billboard_render_pipeline,
+            render_pipeline_layout: billboard_render_pipeline_layout,
         };
 
         // create entity with components
-        let point_entity = world.new_entity();
-        world.add_component_to_entity(point_entity, point_mesh_component);
-        world.add_component_to_entity(point_entity, point_render_pipeline_component);
+        let billboard_entity = world.new_entity();
+        world.add_component_to_entity(billboard_entity, billboard_mesh_component);
+        world.add_component_to_entity(billboard_entity, billboard_render_pipeline_component);
+        world.add_component_to_entity(billboard_entity, billboard_material_component);
 
         Self {
             surface,
@@ -408,29 +412,29 @@ impl State {
             }
         }
 
-        let entity_ids_with_mesh_no_material = self
-            .world
-            .query_entities_with_mesh_but_no_material::<MeshComponent, MaterialComponent>();
+        // let entity_ids_with_mesh_no_material = self
+        //     .world
+        //     .query_entities_with_mesh_but_no_material::<MeshComponent, MaterialComponent>();
 
-        for entity_id in entity_ids_with_mesh_no_material {
-            // Retrieve components for the current entity
-            let render_pipeline = self
-                .world
-                .get_component::<RenderPipelineComponent>(entity_id);
-            let mesh = self.world.get_component::<MeshComponent>(entity_id);
+        // for entity_id in entity_ids_with_mesh_no_material {
+        //     // Retrieve components for the current entity
+        //     let render_pipeline = self
+        //         .world
+        //         .get_component::<RenderPipelineComponent>(entity_id);
+        //     let mesh = self.world.get_component::<MeshComponent>(entity_id);
 
-            // Check if both components are available
-            if let (Some(render_pipeline), Some(mesh)) = (render_pipeline, mesh) {
-                render_pass.set_pipeline(&render_pipeline.render_pipeline);
-                // Material bind group is not set since these entities don't have a material
-                render_pass.set_bind_group(1, &mesh.model_matrix_bind_group, &[]);
+        //     // Check if both components are available
+        //     if let (Some(render_pipeline), Some(mesh)) = (render_pipeline, mesh) {
+        //         render_pass.set_pipeline(&render_pipeline.render_pipeline);
+        //         // Material bind group is not set since these entities don't have a material
+        //         render_pass.set_bind_group(1, &mesh.model_matrix_bind_group, &[]);
 
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
-            }
-        }
+        //         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+        //         render_pass
+        //             .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        //         render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+        //     }
+        // }
 
         drop(render_pass);
 

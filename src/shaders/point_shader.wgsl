@@ -1,5 +1,6 @@
 struct CameraUniform {
-    view_proj: mat4x4<f32>,
+    view_proj_matrix: mat4x4<f32>,
+    view_matrix: mat4x4<f32>,
     eye:  vec4<f32>
 };
 
@@ -28,7 +29,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     let world_position = model_uniform.model * vec4<f32>(model.position, 1.0);
 
     // Transform the position from world space to clip space
-    out.clip_position = camera.view_proj * world_position;
+    out.clip_position = camera.view_proj_matrix * world_position;
 
     // Use the transformed world position for the direction calculation
     out.world_direction = normalize(world_position.xyz - camera.eye.xyz);

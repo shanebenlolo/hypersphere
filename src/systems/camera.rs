@@ -1,9 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{
-    components::camera::{Camera, CameraController, CameraUniform},
-    Uniform,
-};
+use crate::components::camera::{Camera, CameraController, CameraUniform};
 
 pub struct CameraSystem<'a> {
     device: &'a wgpu::Device,
@@ -82,7 +79,7 @@ impl<'a> CameraSystem<'a> {
     }
 }
 
-impl<'a> Uniform for CameraSystem<'a> {
+impl<'a> CameraSystem<'a> {
     fn create_uniform_buffer<T: bytemuck::Pod>(device: &wgpu::Device, data: &T) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Component Uniform Buffer"),
