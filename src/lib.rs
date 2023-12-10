@@ -97,21 +97,6 @@ impl State {
         // -------------------------------------------
         let color: [f32; 4] = [0.0, 0.0, 0.0, 0.0]; // Color as RGBA
         let light_direction: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
-        let globe_image_data = MaterialSystem::cube_map_buffer_from_urls(vec![
-            include_bytes!("./assets/1.png"),
-            include_bytes!("./assets/2.png"),
-            include_bytes!("./assets/3.png"),
-            include_bytes!("./assets/4.png"),
-            include_bytes!("./assets/5.png"),
-            include_bytes!("./assets/6.png"),
-        ]);
-        let billboard_image_data = include_bytes!("./assets/billboard.jpg");
-        let billboard_dyn_image = image::load_from_memory(billboard_image_data)
-            .expect("Failed to load image from memory");
-        let billboard_image_buffer = billboard_dyn_image.to_rgba8();
-        // -------------------------------------------
-        // THESE ARE CURRENTLY GLOBAL BUT SHOULDN'T BE
-        // -------------------------------------------
 
         // init world and systems
         let mut world = World::new();
@@ -141,7 +126,6 @@ impl State {
 
         // GLOBE
         // mesh
-
         let globe_radius = 100.0;
 
         let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
@@ -158,6 +142,14 @@ impl State {
             model_matrix: globe_matrix,
         };
         // material
+        let globe_image_data = MaterialSystem::cube_map_buffer_from_urls(vec![
+            include_bytes!("./assets/1.png"),
+            include_bytes!("./assets/2.png"),
+            include_bytes!("./assets/3.png"),
+            include_bytes!("./assets/4.png"),
+            include_bytes!("./assets/5.png"),
+            include_bytes!("./assets/6.png"),
+        ]);
         let (materal_bind_group, material_bind_group_layout) =
             material_system.create_cube_map_texture(globe_image_data.clone());
         let globe_material_component = MaterialComponent {
@@ -193,8 +185,6 @@ impl State {
 
         // BILLBOARDS
         // mesh
-        // let translation2 = cgmath::Vector3::new(-220.0, 0.0, 0.0);
-        // let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation2));
 
         let billboard_lat = 27.0;
         let billboard_lon = 81.0;
@@ -221,6 +211,10 @@ impl State {
         };
 
         // material
+        let billboard_image_data = include_bytes!("./assets/billboard.jpg");
+        let billboard_dyn_image = image::load_from_memory(billboard_image_data)
+            .expect("Failed to load image from memory");
+        let billboard_image_buffer = billboard_dyn_image.to_rgba8();
         let (materal_bind_group, material_bind_group_layout) =
             material_system.create_2d_texture(billboard_image_buffer);
         let billboard_material_component = MaterialComponent {
@@ -380,11 +374,6 @@ impl State {
 
         render_pass.set_bind_group(0, &self.camera_component.camera_bind_group, &[]);
 
-        // the following queries are mostly just for demonstration...
-        // earth is rendered with the first set of entity ids,
-        // the points are rendered with the second, because
-        // they have no material
-
         let entity_ids_with_mesh_and_material = self
             .world
             .query_entities_with_material_and_mesh::<MeshComponent, MaterialComponent>();
@@ -411,30 +400,6 @@ impl State {
                 render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
             }
         }
-
-        // let entity_ids_with_mesh_no_material = self
-        //     .world
-        //     .query_entities_with_mesh_but_no_material::<MeshComponent, MaterialComponent>();
-
-        // for entity_id in entity_ids_with_mesh_no_material {
-        //     // Retrieve components for the current entity
-        //     let render_pipeline = self
-        //         .world
-        //         .get_component::<RenderPipelineComponent>(entity_id);
-        //     let mesh = self.world.get_component::<MeshComponent>(entity_id);
-
-        //     // Check if both components are available
-        //     if let (Some(render_pipeline), Some(mesh)) = (render_pipeline, mesh) {
-        //         render_pass.set_pipeline(&render_pipeline.render_pipeline);
-        //         // Material bind group is not set since these entities don't have a material
-        //         render_pass.set_bind_group(1, &mesh.model_matrix_bind_group, &[]);
-
-        //         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-        //         render_pass
-        //             .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        //         render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
-        //     }
-        // }
 
         drop(render_pass);
 

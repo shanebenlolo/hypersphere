@@ -11,3 +11,13 @@ wasm-pack build --target web
 ```
 
 once compiled, serve your index.html page (I have been using live server)
+
+## Upcoming features:
+
+- Proper World Geodetic System implementation of globe
+- lat lon picking on click using inverse view matrix and ray-sphere intersection
+- model loading
+- line / arc drawing
+- add time system for simulations (need to find out standard data format) including earth rotation
+- add moon entity and map LRO images to surface (maybe a selenographic coordinate system?),
+- add sun and maybe a simple ray tracer (need to look into performance on single thread, probably not great)
