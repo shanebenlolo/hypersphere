@@ -25,7 +25,7 @@ impl<'a> CameraSystem<'a> {
     ) {
         // these always need to match or else
         let eye = [0.0, 1.0, 2.0, 0.0];
-        let camera_eye = (0.0, 1.0, 2.0);
+        let camera_eye = (0.0, 1.0, 200.0);
 
         let camera = Camera {
             // position the camera one unit up and 2 units back
