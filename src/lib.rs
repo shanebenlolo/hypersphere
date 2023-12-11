@@ -11,9 +11,7 @@ use systems::{
     camera::CameraSystem,
     material::MaterialSystem,
     mesh::MeshSystem,
-    render_pipelines::{
-        BillboardRenderPipelineSystem, GlobeRenderPipelineSystem, PointRenderPipelineSystem,
-    },
+    render_pipelines::{BillboardRenderPipelineSystem, GlobeRenderPipelineSystem},
 };
 use wgpu::Surface;
 use winit::{
@@ -211,7 +209,7 @@ impl State {
         };
 
         // material
-        let billboard_image_data = include_bytes!("./assets/billboard.jpg");
+        let billboard_image_data = include_bytes!("./assets/billboard.png");
         let billboard_dyn_image = image::load_from_memory(billboard_image_data)
             .expect("Failed to load image from memory");
         let billboard_image_buffer = billboard_dyn_image.to_rgba8();

@@ -123,7 +123,18 @@ impl<'a> BillboardRenderPipelineSystem<'a> {
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: texture_format,
-                        blend: Some(wgpu::BlendState::REPLACE),
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                        }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -138,77 +149,6 @@ impl<'a> BillboardRenderPipelineSystem<'a> {
                 },
                 depth_stencil: None,
 
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
-            })
-    }
-}
-
-// point render pipliine is going to end up being deleted because
-// there is no "point" in wgsl
-pub struct PointRenderPipelineSystem<'a> {
-    device: &'a wgpu::Device,
-}
-
-impl<'a> PointRenderPipelineSystem<'a> {
-    pub fn new(device: &'a wgpu::Device) -> PointRenderPipelineSystem {
-        Self { device }
-    }
-
-    pub fn layout_desc(
-        &self,
-        bind_group_layouts: &[&wgpu::BindGroupLayout],
-    ) -> wgpu::PipelineLayout {
-        self.device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Point Render Pipeline Layout"),
-                bind_group_layouts,
-                push_constant_ranges: &[],
-            })
-    }
-
-    pub fn pipeline_desc(
-        &self,
-        pipeline_layout: &wgpu::PipelineLayout,
-        shader_module: &wgpu::ShaderModule,
-        texture_format: wgpu::TextureFormat,
-    ) -> wgpu::RenderPipeline {
-        self.device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Point Render Pipeline"),
-                layout: Some(pipeline_layout),
-
-                vertex: wgpu::VertexState {
-                    module: shader_module,
-                    entry_point: "vs_main",
-                    buffers: &[Vertex::desc()],
-                },
-
-                // frag is technically optional, so we
-                // have to wrap it in Some
-                fragment: Some(wgpu::FragmentState {
-                    module: shader_module,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: texture_format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::PointList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
                 multisample: wgpu::MultisampleState {
                     count: 1,
                     mask: !0,

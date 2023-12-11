@@ -23,7 +23,6 @@ impl<'a> MaterialSystem<'a> {
         &self,
         image_data: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>,
     ) -> (wgpu::BindGroup, wgpu::BindGroupLayout) {
-        // all images must have same dimensions
         let dimensions = image_data[0].dimensions();
         let face_size = wgpu::Extent3d {
             width: dimensions.0,

@@ -1,3 +1,5 @@
+A high-performance web-based geospatial visualization tool with an emphasis LEO satellites and lunar missions. Written in Rust to target WebGPU, with WebGL2 backwards compatibility.
+
 ## To run the application locally:
 
 ```

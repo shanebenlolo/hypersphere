@@ -1,4 +1,4 @@
-use learn_wgpu::run;
+use hypersphere::run;
 use pollster;
 
 fn main() {
