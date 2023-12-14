@@ -1,4 +1,7 @@
-use crate::components::mesh::{BillboardVertex, Vertex};
+use crate::{
+    components::mesh::{BillboardVertex, Vertex},
+    DEPTH_FORMAT,
+};
 
 pub struct GlobeRenderPipelineSystem<'a> {
     device: &'a wgpu::Device,
@@ -67,6 +70,14 @@ impl<'a> GlobeRenderPipelineSystem<'a> {
                     conservative: false,
                 },
                 depth_stencil: None,
+                // depth_stencil: Some(wgpu::DepthStencilState {
+                //     format: DEPTH_FORMAT,
+                //     depth_write_enabled: true,
+                //     depth_compare: wgpu::CompareFunction::Less, // 1.
+                //     stencil: wgpu::StencilState::default(),     // 2.
+                //     bias: wgpu::DepthBiasState::default(),
+                // }),
+
                 // Multisampling is a complex topic not being discussed
                 multisample: wgpu::MultisampleState {
                     count: 1,
@@ -148,7 +159,13 @@ impl<'a> BillboardRenderPipelineSystem<'a> {
                     conservative: false,
                 },
                 depth_stencil: None,
-
+                // depth_stencil: Some(wgpu::DepthStencilState {
+                //     format: DEPTH_FORMAT,
+                //     depth_write_enabled: true,
+                //     depth_compare: wgpu::CompareFunction::Less, // 1.
+                //     stencil: wgpu::StencilState::default(),     // 2.
+                //     bias: wgpu::DepthBiasState::default(),
+                // }),
                 multisample: wgpu::MultisampleState {
                     count: 1,
                     mask: !0,

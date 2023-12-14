@@ -1,8 +1,9 @@
 mod components;
 mod systems;
 mod world;
+use std::f32::consts::PI;
 
-use cgmath::SquareMatrix;
+use cgmath::{InnerSpace, SquareMatrix, Vector3, VectorSpace};
 use components::{
     camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
     render_pipelines::RenderPipelineComponent,
@@ -15,6 +16,7 @@ use systems::{
 };
 use wgpu::Surface;
 use winit::{
+    dpi::PhysicalPosition,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
@@ -25,6 +27,8 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{window, KeyboardEvent};
 use world::World;
+
+use crate::components::camera;
 
 // this belongs somewhere else like serialization util or something
 fn matrix4_to_array(mat: cgmath::Matrix4<f32>) -> [[f32; 4]; 4] {
@@ -49,8 +53,11 @@ struct State {
     world: World,
 
     camera_component: CameraComponent,
+    // depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
+    screen_coords: Option<PhysicalPosition<f64>>,
+    globe_radius: f32,
 }
-
+pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
 impl State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
@@ -121,6 +128,43 @@ impl State {
             camera_bind_group_layout,
             camera_controller,
         };
+        // pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
+
+        // let depth_size = wgpu::Extent3d {
+        //     // 2.
+        //     width: config.width,
+        //     height: config.height,
+        //     depth_or_array_layers: 1,
+        // };
+        // let desc = wgpu::TextureDescriptor {
+        //     label: Some("depth texture"),
+        //     size: depth_size,
+        //     mip_level_count: 1,
+        //     sample_count: 1,
+        //     dimension: wgpu::TextureDimension::D2,
+        //     format: DEPTH_FORMAT,
+        //     usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
+        //             | wgpu::TextureUsages::TEXTURE_BINDING,
+        //     view_formats: &[],
+        // };
+        // let texture = device.create_texture(&desc);
+
+        // let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        //     // 4.
+        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_w: wgpu::AddressMode::ClampToEdge,
+        //     mag_filter: wgpu::FilterMode::Linear,
+        //     min_filter: wgpu::FilterMode::Linear,
+        //     mipmap_filter: wgpu::FilterMode::Nearest,
+        //     compare: Some(wgpu::CompareFunction::Always), // 5.
+        //     lod_min_clamp: 0.0,
+        //     lod_max_clamp: 100.0,
+        //     ..Default::default()
+        // });
+
+        // let depth_texture = (texture, view, sampler);
 
         // GLOBE
         // mesh
@@ -241,11 +285,11 @@ impl State {
             render_pipeline_layout: billboard_render_pipeline_layout,
         };
 
-        // create entity with components
-        let billboard_entity = world.new_entity();
-        world.add_component_to_entity(billboard_entity, billboard_mesh_component);
-        world.add_component_to_entity(billboard_entity, billboard_render_pipeline_component);
-        world.add_component_to_entity(billboard_entity, billboard_material_component);
+        // // create entity with components
+        // let billboard_entity = world.new_entity();
+        // world.add_component_to_entity(billboard_entity, billboard_mesh_component);
+        // world.add_component_to_entity(billboard_entity, billboard_render_pipeline_component);
+        // world.add_component_to_entity(billboard_entity, billboard_material_component);
 
         Self {
             surface,
@@ -255,6 +299,8 @@ impl State {
             size,
             camera_component,
             world,
+            screen_coords: None,
+            globe_radius, // depth_texture,
         }
     }
 
@@ -308,8 +354,47 @@ impl State {
         match event {
             WindowEvent::MouseInput { button, state, .. } => {
                 if button == &MouseButton::Left && state == &ElementState::Pressed {
-                    print("I have been clicked")
+                    let screen_width = self.config.width as f32;
+                    let screen_height = self.config.height as f32;
+                    let position_x = screen_width / 2.0;
+                    let position_y = screen_height / 2.0;
+                    let cam_proj_matrix = self.camera_component.camera_uniform.proj_matrix;
+                    let cam_view_matrix = self.camera_component.camera_uniform.view_matrix;
+
+                    let globe_origin = cgmath::Matrix4::identity();
+                    let ray_origin = cgmath::Vector4::new(
+                        cam_view_matrix[3][0],
+                        cam_view_matrix[3][1],
+                        cam_view_matrix[3][2],
+                        cam_view_matrix[3][3],
+                    );
+
+                    let mouse_pos_clip_space = cgmath::Vector4::new(
+                        (position_x * 2.0) / screen_width - 1.0,
+                        1.0 - (2.0 * position_y) / screen_height,
+                        0.0,
+                        1.0,
+                    );
+                    let mut mouse_pos_view_space =
+                        cgmath::Matrix4::from(cam_proj_matrix).invert().unwrap()
+                            * mouse_pos_clip_space;
+
+                    mouse_pos_view_space = mouse_pos_view_space / mouse_pos_view_space.w;
+
+                    let model_matrix_inverse = globe_origin.invert().unwrap();
+
+                    let mouse_pos_world_space = model_matrix_inverse * mouse_pos_view_space;
+
+                    let ray_direction = (mouse_pos_world_space - ray_origin).normalize();
+
+                    let point_closest_to_origin = (globe_origin[3] - ray_origin).dot(ray_direction);
+
+                    println!("break");
+                    // assert!(point_closest_to_origin < 200.0)
                 }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.screen_coords = Some(*position);
             }
             _ => {}
         }
@@ -368,6 +453,14 @@ impl State {
                 },
             })],
             depth_stencil_attachment: None,
+            // depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            //     view: &self.depth_texture.1,
+            //     depth_ops: Some(wgpu::Operations {
+            //         load: wgpu::LoadOp::Clear(1.0),
+            //         store: true,
+            //     }),
+            //     stencil_ops: None,
+            // }),
         });
 
         render_pass.set_bind_group(0, &self.camera_component.camera_bind_group, &[]);

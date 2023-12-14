@@ -7,16 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'learn_wgpu'",
+            "name": "Debug unit tests in library 'hypersphere'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=learn_wgpu"
+                    "--package=hypersphere"
                 ],
                 "filter": {
-                    "name": "learn_wgpu",
+                    "name": "hypersphere",
                     "kind": "lib"
                 }
             },
@@ -26,15 +26,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'learn_wgpu'",
+            "name": "Debug executable 'hypersphere'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=learn_wgpu",
-                    "--package=learn_wgpu"
+                    "--bin=hypersphere",
+                    "--package=hypersphere"
                 ],
                 "filter": {
-                    "name": "learn_wgpu",
+                    "name": "hypersphere",
                     "kind": "bin"
                 }
             },
@@ -44,16 +44,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'learn_wgpu'",
+            "name": "Debug unit tests in executable 'hypersphere'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=learn_wgpu",
-                    "--package=learn_wgpu"
+                    "--bin=hypersphere",
+                    "--package=hypersphere"
                 ],
                 "filter": {
-                    "name": "learn_wgpu",
+                    "name": "hypersphere",
                     "kind": "bin"
                 }
             },

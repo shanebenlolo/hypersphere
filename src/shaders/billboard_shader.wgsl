@@ -6,7 +6,6 @@ struct VertexInput {
 struct CameraUniform {
     view_proj_matrix: mat4x4<f32>,
     view_matrix: mat4x4<f32>,
-    eye:  vec4<f32>
 };
 
 struct ModelUniform {

@@ -1,3 +1,4 @@
+use cgmath::Vector3;
 use winit::event::{ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 #[rustfmt::skip]
@@ -34,10 +35,27 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn build_view_projection_matrix(&self) -> (cgmath::Matrix4<f32>, cgmath::Matrix4<f32>) {
+    //     The build_view_projection_matrix is where the magic happens.
+
+    // The view matrix moves the world to be at the position and rotation of the camera. It's essentially an inverse of whatever the transform matrix of the camera would be.
+    // The proj matrix warps the scene to give the effect of depth. Without this, objects up close would be the same size as objects far away.
+    // The coordinate system in Wgpu is based on DirectX and Metal's coordinate systems. That means that in normalized device coordinates (opens new window), the x-axis and y-axis are in the range of -1.0 to +1.0, and the z-axis is 0.0 to +1.0. The cgmath crate (as well as most game math crates) is built for OpenGL's coordinate system. This matrix will scale and translate our scene from OpenGL's coordinate system to WGPU's. We'll define it as follows.
+
+    // this really needs to be refactored so we don't have to clone these matrices. Just combine the camera abd cameraUniform or something...
+    pub fn build_view_projection_matrix(
+        &self,
+    ) -> (
+        cgmath::Matrix4<f32>,
+        cgmath::Matrix4<f32>,
+        cgmath::Matrix4<f32>,
+    ) {
         let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-        return (OPENGL_TO_WGPU_MATRIX * proj * view, view.clone());
+        return (
+            OPENGL_TO_WGPU_MATRIX * proj * view,
+            view.clone(),
+            proj.clone(),
+        );
     }
 }
 
@@ -96,6 +114,13 @@ impl CameraController {
     }
 
     pub fn update_camera(&self, camera: &mut Camera) {
+        // let forward: cgmath::Vector3<f32> = camera.target - camera.eye;
+
+        // let mut forward_norm = forward.normalize();
+        // if forward_norm.x.is_nan() {
+        //     forward_norm = cgmath::Vector3::new(0.1, 0.1, 0.1);
+        // }
+
         use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
@@ -137,21 +162,22 @@ pub struct CameraUniform {
     // to convert the Matrix4 into a 4x4 f32 array
     pub view_proj_matrix: [[f32; 4]; 4],
     pub view_matrix: [[f32; 4]; 4],
-    eye: [f32; 4],
+    pub proj_matrix: [[f32; 4]; 4],
 }
 
 impl CameraUniform {
-    pub fn new(eye: [f32; 4]) -> Self {
+    pub fn new() -> Self {
         Self {
             view_proj_matrix: IDENTITY_MATRIX_4,
             view_matrix: IDENTITY_MATRIX_4,
-            eye,
+            proj_matrix: IDENTITY_MATRIX_4,
         }
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera) {
-        let (view_proj_matrix, view_matrix) = camera.build_view_projection_matrix();
+        let (view_proj_matrix, view_matrix, proj_matrix) = camera.build_view_projection_matrix();
         self.view_proj_matrix = view_proj_matrix.into();
         self.view_matrix = view_matrix.into();
+        self.proj_matrix = proj_matrix.into();
     }
 }

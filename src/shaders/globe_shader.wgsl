@@ -1,7 +1,8 @@
+const PI: f32 = 3.141592653589793;
+
 struct CameraUniform {
     view_proj_matrix: mat4x4<f32>,
     view_matrix: mat4x4<f32>,
-    eye:  vec4<f32>
 };
 
 struct ModelUniform {
@@ -15,7 +16,7 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) world_direction: vec3<f32>,
+    @location(0) tex_coords: vec3<f32>, // Texture coordinates
 };
 
 
@@ -32,8 +33,8 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     // Transform the position from world space to clip space
     out.clip_position = camera.view_proj_matrix * world_position;
 
-    // Use the transformed world position for the direction calculation
-    out.world_direction = normalize(world_position.xyz - camera.eye.xyz);
+    // Use the normalized position as direction vector for cube texture coordinates
+    out.tex_coords = normalize(model.position);
 
     return out;
 }
@@ -44,9 +45,9 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Sample the texture using the texture coordinates from the VertexOutput
-    let cubemap_color = textureSample(globeTexture, globeSampler, in.world_direction);
+    // Sample the texture using the texture coordinates
+    let texture_color = textureSample(globeTexture, globeSampler, in.tex_coords);
 
-    // Return the sampled color directly without any lighting calculations
-    return cubemap_color;
+    // Return the sampled color
+    return texture_color;
 }
