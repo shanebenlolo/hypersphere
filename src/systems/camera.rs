@@ -34,7 +34,7 @@ impl<'a> CameraSystem<'a> {
             aspect: screen_width as f32 / screen_height as f32,
             fovy: 45.0,
             znear: 0.1,
-            zfar: 100.0,
+            zfar: 1000.0,
         };
 
         let mut camera_uniform = CameraUniform::new();

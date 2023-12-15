@@ -49,13 +49,13 @@ impl Camera {
         cgmath::Matrix4<f32>,
         cgmath::Matrix4<f32>,
     ) {
+        // you'll need to figure out how to fix the matrix for the web:
+        // OPENGL_TO_WGPU_MATRIX * proj * view,
+        // OPENGL_TO_WGPU_MATRIX * view.clone(),
+        // OPENGL_TO_WGPU_MATRIX * proj.clone(),
         let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-        return (
-            OPENGL_TO_WGPU_MATRIX * proj * view,
-            view.clone(),
-            proj.clone(),
-        );
+        return (proj * view, view.clone(), proj.clone());
     }
 }
 
@@ -114,13 +114,6 @@ impl CameraController {
     }
 
     pub fn update_camera(&self, camera: &mut Camera) {
-        // let forward: cgmath::Vector3<f32> = camera.target - camera.eye;
-
-        // let mut forward_norm = forward.normalize();
-        // if forward_norm.x.is_nan() {
-        //     forward_norm = cgmath::Vector3::new(0.1, 0.1, 0.1);
-        // }
-
         use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
@@ -135,20 +128,19 @@ impl CameraController {
             camera.eye -= forward_norm * self.speed;
         }
 
-        let right = forward_norm.cross(camera.up);
-
-        // Redo radius calc in case the fowrard/backward is pressed.
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.magnitude();
-
         if self.is_right_pressed {
-            // Rescale the distance between the target and eye so
-            // that it doesn't change. The eye therefore still
-            // lies on the circle made by the target and eye.
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
+            // Rotate the camera around the target point to the right
+            let rotation_angle = cgmath::Rad(cgmath::Deg(self.speed / 100.0).0); // Convert to radians
+            let rotation_matrix = cgmath::Matrix3::from_axis_angle(camera.up, -rotation_angle);
+            let relative_position = camera.eye - camera.target;
+            camera.eye = camera.target + rotation_matrix * relative_position;
         }
         if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
+            // Rotate the camera around the target point to the left
+            let rotation_angle = cgmath::Rad(cgmath::Deg(self.speed / 100.0).0); // Convert to radians
+            let rotation_matrix = cgmath::Matrix3::from_axis_angle(camera.up, rotation_angle);
+            let relative_position = camera.eye - camera.target;
+            camera.eye = camera.target + rotation_matrix * relative_position;
         }
     }
 }

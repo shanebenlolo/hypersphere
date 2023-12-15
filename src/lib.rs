@@ -174,7 +174,8 @@ impl State {
         let globe_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
         let globe_matrix_bind_group = mesh_system
             .create_mode_matrix_bind_group(&globe_matrix_bind_group_layout, globe_matrix.clone());
-        let (globe_vertices_vec, globe_indices_vec) = MeshSystem::generate_sphere_mesh(100.0, 90);
+        let (globe_vertices_vec, globe_indices_vec) =
+            MeshSystem::generate_sphere_mesh(globe_radius.clone(), 90);
         let globe_mesh_component = MeshComponent {
             vertex_buffer: mesh_system.create_vertex_buffer(&globe_vertices_vec.as_slice()),
             index_buffer: mesh_system.create_index_buffer(&globe_indices_vec.as_slice()),
@@ -242,7 +243,7 @@ impl State {
             billboard_matrix.clone(),
         );
         let (billboard_vertices_vec, billboard_indices_vec) =
-            MeshSystem::generate_rectangle_mesh(billboard_lat, billboard_lon, billboard_size);
+            MeshSystem::generate_rectangle_mesh(billboard_size);
         let billboard_mesh_component = MeshComponent {
             vertex_buffer: mesh_system.create_vertex_buffer(&billboard_vertices_vec.as_slice()),
             index_buffer: mesh_system.create_index_buffer(&billboard_indices_vec.as_slice()),
@@ -285,11 +286,11 @@ impl State {
             render_pipeline_layout: billboard_render_pipeline_layout,
         };
 
-        // // create entity with components
-        // let billboard_entity = world.new_entity();
-        // world.add_component_to_entity(billboard_entity, billboard_mesh_component);
-        // world.add_component_to_entity(billboard_entity, billboard_render_pipeline_component);
-        // world.add_component_to_entity(billboard_entity, billboard_material_component);
+        // create entity with components
+        let billboard_entity = world.new_entity();
+        world.add_component_to_entity(billboard_entity, billboard_mesh_component);
+        world.add_component_to_entity(billboard_entity, billboard_render_pipeline_component);
+        world.add_component_to_entity(billboard_entity, billboard_material_component);
 
         Self {
             surface,
@@ -356,41 +357,76 @@ impl State {
                 if button == &MouseButton::Left && state == &ElementState::Pressed {
                     let screen_width = self.config.width as f32;
                     let screen_height = self.config.height as f32;
-                    let position_x = screen_width / 2.0;
-                    let position_y = screen_height / 2.0;
-                    let cam_proj_matrix = self.camera_component.camera_uniform.proj_matrix;
-                    let cam_view_matrix = self.camera_component.camera_uniform.view_matrix;
-
-                    let globe_origin = cgmath::Matrix4::identity();
-                    let ray_origin = cgmath::Vector4::new(
-                        cam_view_matrix[3][0],
-                        cam_view_matrix[3][1],
-                        cam_view_matrix[3][2],
-                        cam_view_matrix[3][3],
+                    let position_x = self.screen_coords.unwrap().x as f32;
+                    let position_y = self.screen_coords.unwrap().y as f32;
+                    let view_proj_matrix = cgmath::Matrix4::from(
+                        self.camera_component.camera_uniform.view_proj_matrix,
                     );
 
-                    let mouse_pos_clip_space = cgmath::Vector4::new(
+                    let mouse_pos_clip_near = cgmath::Vector4::new(
                         (position_x * 2.0) / screen_width - 1.0,
                         1.0 - (2.0 * position_y) / screen_height,
-                        0.0,
+                        self.camera_component.camera.znear,
                         1.0,
                     );
-                    let mut mouse_pos_view_space =
-                        cgmath::Matrix4::from(cam_proj_matrix).invert().unwrap()
-                            * mouse_pos_clip_space;
 
-                    mouse_pos_view_space = mouse_pos_view_space / mouse_pos_view_space.w;
+                    let mouse_pos_clip_far = cgmath::Vector4::new(
+                        (position_x * 2.0) / screen_width - 1.0,
+                        1.0 - (2.0 * position_y) / screen_height,
+                        self.camera_component.camera.zfar,
+                        1.0,
+                    );
 
-                    let model_matrix_inverse = globe_origin.invert().unwrap();
+                    // Transform these points to world space
+                    let mouse_pos_world_near =
+                        (view_proj_matrix).invert().unwrap() * mouse_pos_clip_near;
+                    let mouse_pos_world_far =
+                        (view_proj_matrix).invert().unwrap() * mouse_pos_clip_far;
 
-                    let mouse_pos_world_space = model_matrix_inverse * mouse_pos_view_space;
+                    // Convert from homogeneous to Cartesian coordinates
+                    let mouse_pos_world_near =
+                        mouse_pos_world_near.truncate() / mouse_pos_world_near.w;
+                    let mouse_pos_world_far =
+                        mouse_pos_world_far.truncate() / mouse_pos_world_far.w;
 
-                    let ray_direction = (mouse_pos_world_space - ray_origin).normalize();
+                    // Create the ray
+                    // needs to be a matrix4
+                    let ray_origin = Vector3::new(
+                        self.camera_component.camera.eye.x,
+                        self.camera_component.camera.eye.y,
+                        self.camera_component.camera.eye.z,
+                    );
+                    let ray_direction = (mouse_pos_world_far - mouse_pos_world_near).normalize();
 
-                    let point_closest_to_origin = (globe_origin[3] - ray_origin).dot(ray_direction);
+                    let oc = ray_origin - cgmath::Vector3::new(0.0, 0.0, 0.0);
+                    let a = ray_direction.dot(ray_direction);
+                    let b = 2.0 * oc.dot(ray_direction);
+                    let c = oc.dot(oc) - self.globe_radius * self.globe_radius;
+                    let discriminant = b * b - 4.0 * a * c;
 
-                    println!("break");
-                    // assert!(point_closest_to_origin < 200.0)
+                    // intersection
+                    if discriminant >= 0.0 {
+                        let discriminant_sqrt = discriminant.sqrt();
+                        let t1 = (-b - discriminant_sqrt) / (2.0 * a);
+                        let t2 = (-b + discriminant_sqrt) / (2.0 * a);
+
+                        let t = if t1 > 0.0 && (t2 < 0.0 || t1 < t2) {
+                            t1
+                        } else {
+                            t2
+                        };
+
+                        let intersection_point = ray_origin + ray_direction * t;
+
+                        // Calculate Latitude (φ) and Longitude (λ)
+                        let normalized_point = intersection_point.normalize(); // Make sure it's on the unit sphere
+
+                        let latitude = normalized_point.y.asin().to_degrees(); // Convert radians to degrees
+                        let longitude = normalized_point.z.atan2(normalized_point.x).to_degrees(); // Convert radians to degrees
+                        println!("lat: {:?}, lon: {:?}", latitude, longitude);
+                    } else {
+                        // No intersection with the sphere
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -521,7 +557,7 @@ pub async fn run() {
         // Winit prevents sizing with CSS, so we have to
         // set the size manually when on web.
         use winit::dpi::PhysicalSize;
-        window.set_inner_size(PhysicalSize::new(1080, 1080));
+        window.set_inner_size(PhysicalSize::new(800, 600));
 
         use winit::platform::web::WindowExtWebSys;
         web_sys::window()

@@ -33,8 +33,13 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     // Transform the position from world space to clip space
     out.clip_position = camera.view_proj_matrix * world_position;
 
-    // Use the normalized position as direction vector for cube texture coordinates
-    out.tex_coords = normalize(model.position);
+    // Rotate the texture coordinates by 180 degrees around the Y-axis
+    // YOU WILL NEED TO REVIST THIS IF YOU EVER CHANGE YOU CUBE MAP
+    let rotated_tex_coords = vec3<f32>(-model.position.x, model.position.y, -model.position.z);
+
+    // Use the normalized rotated position as direction vector for cube texture coordinates
+    out.tex_coords = normalize(rotated_tex_coords);
+
 
     return out;
 }
@@ -42,7 +47,6 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 // fragment
 @group(1) @binding(0) var globeTexture: texture_cube<f32>;
 @group(1) @binding(1) var globeSampler: sampler;
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample the texture using the texture coordinates

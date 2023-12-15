@@ -119,11 +119,7 @@ impl<'a> MeshSystem<'a> {
         (vertices, indices)
     }
 
-    pub fn generate_rectangle_mesh(
-        lat: f32,
-        lon: f32,
-        size: (f32, f32),
-    ) -> (Vec<BillboardVertex>, Vec<u32>) {
+    pub fn generate_rectangle_mesh(size: (f32, f32)) -> (Vec<BillboardVertex>, Vec<u32>) {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
@@ -166,13 +162,12 @@ impl<'a> MeshSystem<'a> {
     }
 
     pub fn lat_lon_to_cartesian(lat: f32, lon: f32, radius: f32) -> (f32, f32, f32) {
-        let lat_rad = MeshSystem::degrees_to_radians(lat);
-        let lon_rad = MeshSystem::degrees_to_radians(lon);
+        let phi = (90.0 - lat).to_radians(); // Convert latitude to radians and start from the north pole
+        let theta = lon.to_radians(); // Convert longitude to radians
 
-        let x = radius * lat_rad.cos() * lon_rad.cos();
-        let y = radius * lat_rad.cos() * lon_rad.sin();
-        let z = radius * lat_rad.sin();
-
+        let x = radius * phi.sin() * theta.cos();
+        let y = radius * phi.cos();
+        let z = radius * phi.sin() * theta.sin();
         (x, y, z)
     }
 }
