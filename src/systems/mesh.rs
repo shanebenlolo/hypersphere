@@ -2,46 +2,37 @@ use wgpu::util::DeviceExt;
 
 use crate::components::mesh::{BillboardVertex, Vertex};
 
-pub struct MeshSystem<'a> {
-    device: &'a wgpu::Device,
-}
+pub struct MeshSystem {}
 
-impl<'a> MeshSystem<'a> {
-    pub fn new(device: &'a wgpu::Device) -> Self {
-        Self { device }
-    }
-
-    pub fn create_model_matrix_bind_group_layout(&self) -> wgpu::BindGroupLayout {
-        self.device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX, // Assuming the model matrix is used in the vertex shader
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("Mesh Bind Group Layout"),
-            })
+impl MeshSystem {
+    pub fn create_model_matrix_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX, // Assuming the model matrix is used in the vertex shader
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("Mesh Bind Group Layout"),
+        })
     }
 
     pub fn create_mode_matrix_bind_group(
-        &self,
+        device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         model_matrix: [[f32; 4]; 4],
     ) -> wgpu::BindGroup {
-        let buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Mesh Buffer"),
-                contents: bytemuck::cast_slice(&[model_matrix]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh Buffer"),
+            contents: bytemuck::cast_slice(&[model_matrix]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -53,25 +44,23 @@ impl<'a> MeshSystem<'a> {
 
     // keeping these decoupled and not iterative until
     // we have more geometry
-    pub fn create_vertex_buffer<T>(&self, data: &[T]) -> wgpu::Buffer
+    pub fn create_vertex_buffer<T>(device: &wgpu::Device, data: &[T]) -> wgpu::Buffer
     where
         T: bytemuck::Pod,
     {
-        self.device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(data),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            })
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(data),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        })
     }
 
-    pub fn create_index_buffer(&self, data: &[u32]) -> wgpu::Buffer {
-        self.device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(data),
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            })
+    pub fn create_index_buffer(device: &wgpu::Device, data: &[u32]) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(data),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        })
     }
 
     fn map(value: u32, start1: u32, stop1: u32, start2: f32, stop2: f32) -> f32 {

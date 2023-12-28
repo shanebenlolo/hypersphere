@@ -1,18 +1,13 @@
 use wgpu::util::DeviceExt;
+use winit::event::{ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 use crate::components::camera::{Camera, CameraController, CameraUniform};
 
-pub struct CameraSystem<'a> {
-    device: &'a wgpu::Device,
-}
+pub struct CameraSystem {}
 
-impl<'a> CameraSystem<'a> {
-    pub fn new(device: &'a wgpu::Device) -> Self {
-        Self { device }
-    }
-
+impl CameraSystem {
     pub fn create_camera(
-        &self,
+        device: &wgpu::Device,
         screen_width: u32,
         screen_height: u32,
     ) -> (
@@ -40,25 +35,24 @@ impl<'a> CameraSystem<'a> {
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
-        let camera_buffer = CameraSystem::create_uniform_buffer(self.device, &camera_uniform);
+        let camera_buffer = CameraSystem::create_uniform_buffer(device, &camera_uniform);
         let camera_bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                    label: Some("Camera Component Uniform Bind Group Layout"),
-                });
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("Camera Component Uniform Bind Group Layout"),
+            });
 
         let camera_bind_group = CameraSystem::create_uniform_bind_group(
-            self.device,
+            device,
             &camera_buffer,
             &camera_bind_group_layout,
         );
@@ -73,9 +67,7 @@ impl<'a> CameraSystem<'a> {
             camera_controller,
         )
     }
-}
 
-impl<'a> CameraSystem<'a> {
     fn create_uniform_buffer<T: bytemuck::Pod>(device: &wgpu::Device, data: &T) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Component Uniform Buffer"),
@@ -97,5 +89,72 @@ impl<'a> CameraSystem<'a> {
             }],
             label: Some("Camera Component Uniform Bind Group"),
         })
+    }
+
+    pub fn process_key_events(cam_controller: &mut CameraController, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state,
+                        virtual_keycode: Some(keycode),
+                        ..
+                    },
+                ..
+            } => {
+                let is_pressed = *state == ElementState::Pressed;
+                match keycode {
+                    VirtualKeyCode::W | VirtualKeyCode::Up => {
+                        cam_controller.is_forward_pressed = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::A | VirtualKeyCode::Left => {
+                        cam_controller.is_left_pressed = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::S | VirtualKeyCode::Down => {
+                        cam_controller.is_backward_pressed = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::D | VirtualKeyCode::Right => {
+                        cam_controller.is_right_pressed = is_pressed;
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    pub fn update_camera(cam_controller: &mut CameraController, camera: &mut Camera) {
+        use cgmath::InnerSpace;
+        let forward = camera.target - camera.eye;
+        let forward_norm = forward.normalize();
+        let forward_mag = forward.magnitude();
+
+        // Prevents glitching when camera gets too close to the
+        // center of the scene.
+        if cam_controller.is_forward_pressed && forward_mag > cam_controller.speed {
+            camera.eye += forward_norm * cam_controller.speed;
+        }
+        if cam_controller.is_backward_pressed {
+            camera.eye -= forward_norm * cam_controller.speed;
+        }
+
+        if cam_controller.is_right_pressed {
+            // Rotate the camera around the target point to the right
+            let rotation_angle = cgmath::Rad(cgmath::Deg(cam_controller.speed / 100.0).0); // Convert to radians
+            let rotation_matrix = cgmath::Matrix3::from_axis_angle(camera.up, -rotation_angle);
+            let relative_position = camera.eye - camera.target;
+            camera.eye = camera.target + rotation_matrix * relative_position;
+        }
+        if cam_controller.is_left_pressed {
+            // Rotate the camera around the target point to the left
+            let rotation_angle = cgmath::Rad(cgmath::Deg(cam_controller.speed / 100.0).0); // Convert to radians
+            let rotation_matrix = cgmath::Matrix3::from_axis_angle(camera.up, rotation_angle);
+            let relative_position = camera.eye - camera.target;
+            camera.eye = camera.target + rotation_matrix * relative_position;
+        }
     }
 }

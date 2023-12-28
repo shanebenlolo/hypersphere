@@ -1,0 +1,34 @@
+  // Call this method every frame to update the globe's texture
+    pub fn update_tiles(&self, camera: &Camera, tile_server: &TileServer) {
+        // Step 1: Calculate rays for screen corners
+        let rays = camera.calculate_corner_rays();
+
+        // Step 2: Find the intersection points of the rays with the sphere
+        let mut lat_lon_bounds = LatLonBounds::new();
+        for ray in rays {
+            if let Some(intersection) = self.intersect_ray(ray) {
+                let lat_lon = self.to_lat_lon(intersection);
+                lat_lon_bounds.update(lat_lon);
+            }
+        }
+
+        // Step 3: If no intersections are found, assume the whole globe is visible
+        if lat_lon_bounds.is_empty() {
+            lat_lon_bounds = self.whole_globe_bounds();
+        }
+
+        // Step 4: Determine visible tiles using the lat_lon_bounds
+        let visible_tiles = tile_server.calculate_visible_tiles(&lat_lon_bounds);
+
+        // Step 5: Calculate LOD based on distance from the camera
+        let lod = self.calculate_lod(camera);
+
+        // Step 6: Load the tiles with the appropriate LOD
+        for tile in visible_tiles {
+            let texture = self.load_tile(&tile, lod);
+            // Handle the texture (upload to GPU, update UVs, etc.)
+        }
+
+        // Step 7: Handle optimizations (caching, frustum culling, etc.)
+        self.optimize_tiles(&visible_tiles);
+    }

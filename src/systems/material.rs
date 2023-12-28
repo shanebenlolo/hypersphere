@@ -1,14 +1,8 @@
 use image::{ImageBuffer, Rgba};
 
-pub struct MaterialSystem<'a> {
-    device: &'a wgpu::Device,
-    queue: &'a wgpu::Queue,
-}
+pub struct MaterialSystem {}
 
-impl<'a> MaterialSystem<'a> {
-    pub fn new(device: &'a wgpu::Device, queue: &'a wgpu::Queue) -> Self {
-        Self { device, queue }
-    }
+impl MaterialSystem {
     pub fn cube_map_buffer_from_urls(urls: Vec<&[u8]>) -> Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> {
         urls.iter()
             .map(|&cube_bytes| {
@@ -20,7 +14,8 @@ impl<'a> MaterialSystem<'a> {
     }
 
     pub fn create_cube_map_texture(
-        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         image_data: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>,
     ) -> (wgpu::BindGroup, wgpu::BindGroupLayout) {
         let dimensions = image_data[0].dimensions();
@@ -30,7 +25,7 @@ impl<'a> MaterialSystem<'a> {
             depth_or_array_layers: 1, // Single layer for each face
         };
 
-        let cube_map_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        let cube_map_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
                 width: dimensions.0,
                 height: dimensions.1,
@@ -47,7 +42,7 @@ impl<'a> MaterialSystem<'a> {
 
         // Copy each face into the cube texture
         for (i, data) in image_data.iter().enumerate() {
-            self.queue.write_texture(
+            queue.write_texture(
                 wgpu::ImageCopyTexture {
                     texture: &cube_map_texture,
                     mip_level: 0,
@@ -79,7 +74,7 @@ impl<'a> MaterialSystem<'a> {
             array_layer_count: Some(6),
         });
 
-        let cube_map_material_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+        let cube_map_material_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Cube Map Material Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -91,48 +86,46 @@ impl<'a> MaterialSystem<'a> {
         });
 
         let cube_map_material_bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Cube Map Material bind group layout"),
-                    entries: &[
-                        // texture
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::Cube,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        // sampler
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            // This should match the filterable field of the
-                            // corresponding Texture entry above.
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                });
-
-        let cube_map_material_bind_group =
-            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &cube_map_material_bind_group_layout,
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Cube Map Material bind group layout"),
                 entries: &[
-                    wgpu::BindGroupEntry {
+                    // texture
+                    wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&cube_map_material_view),
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::Cube,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    wgpu::BindGroupEntry {
+                    // sampler
+                    wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&cube_map_material_sampler),
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
                     },
                 ],
-                label: Some("Cube Map Material bind group"),
             });
+
+        let cube_map_material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &cube_map_material_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&cube_map_material_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&cube_map_material_sampler),
+                },
+            ],
+            label: Some("Cube Map Material bind group"),
+        });
         (
             cube_map_material_bind_group,
             cube_map_material_bind_group_layout,
@@ -140,7 +133,8 @@ impl<'a> MaterialSystem<'a> {
     }
 
     pub fn create_2d_texture(
-        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         image_data: ImageBuffer<Rgba<u8>, Vec<u8>>,
     ) -> (wgpu::BindGroup, wgpu::BindGroupLayout) {
         let dimensions = image_data.dimensions();
@@ -150,7 +144,7 @@ impl<'a> MaterialSystem<'a> {
             depth_or_array_layers: 1, // Single layer for 2D texture
         };
 
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_size,
             mip_level_count: 1,
             sample_count: 1,
@@ -161,7 +155,7 @@ impl<'a> MaterialSystem<'a> {
             view_formats: &[],
         });
 
-        self.queue.write_texture(
+        queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &texture,
                 mip_level: 0,
@@ -188,7 +182,7 @@ impl<'a> MaterialSystem<'a> {
             array_layer_count: None,
         });
 
-        let texture_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("2D Texture Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -200,32 +194,31 @@ impl<'a> MaterialSystem<'a> {
         });
 
         let texture_bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("2D Texture bind group layout"),
-                    entries: &[
-                        // Texture
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("2D Texture bind group layout"),
+                entries: &[
+                    // Texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         },
-                        // Sampler
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                });
+                        count: None,
+                    },
+                    // Sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
-        let texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {

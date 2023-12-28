@@ -7,6 +7,8 @@ pub struct MeshComponent {
     pub model_matrix: [[f32; 4]; 4],
 }
 
+// Needed to ensure rust compiled our data correctly for the shaders
+// Needed to store the data in a buffer without compiler rearranging
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -27,6 +29,8 @@ impl Vertex {
     }
 }
 
+// Needed to ensure rust compiled our data correctly for the shaders
+// Needed to store the data in a buffer without compiler rearranging
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BillboardVertex {

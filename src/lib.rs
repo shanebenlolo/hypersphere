@@ -1,9 +1,8 @@
 mod components;
 mod systems;
 mod world;
-use std::f32::consts::PI;
 
-use cgmath::{InnerSpace, SquareMatrix, Vector3, VectorSpace};
+use cgmath::{InnerSpace, SquareMatrix, Vector3};
 use components::{
     camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
     render_pipelines::RenderPipelineComponent,
@@ -28,8 +27,6 @@ use wasm_bindgen::prelude::*;
 use web_sys::{window, KeyboardEvent};
 use world::World;
 
-use crate::components::camera;
-
 // this belongs somewhere else like serialization util or something
 fn matrix4_to_array(mat: cgmath::Matrix4<f32>) -> [[f32; 4]; 4] {
     let m: [[f32; 4]; 4] = mat.into();
@@ -43,7 +40,7 @@ fn matrix4_to_array(mat: cgmath::Matrix4<f32>) -> [[f32; 4]; 4] {
 
 struct State {
     // renderer
-    size: winit::dpi::PhysicalSize<u32>,
+    window_size: winit::dpi::PhysicalSize<u32>,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -53,65 +50,23 @@ struct State {
     world: World,
 
     camera_component: CameraComponent,
+
     // depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
     screen_coords: Option<PhysicalPosition<f64>>,
     globe_radius: f32,
 }
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
 impl State {
-    async fn new(window: &Window) -> Self {
-        let size = window.inner_size();
-
-        // The instance is a handle to our GPU
-        // Backends::all => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = State::create_instance();
-
-        // # Safety
-        // The surface needs to live as long as the window that created it.
-        // State owns the window so this should be safe.
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
-        let adapter = State::create_adapter(&instance, &surface).await;
-        let (device, queue) = State::create_device_and_queue(&adapter).await;
-
-        let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an sRGB surface texture. Using a different
-        // one will result all the colors coming out darker. If you want to support non
-        // sRGB surfaces, you'll need to account for that when drawing to the frame.
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: size.width,
-            height: size.height,
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-        };
-        surface.configure(&device, &config);
-
-        // there should be a seperation of everything above and below this comment
-
-        // -------------------------------------------
-        // THESE ARE CURRENTLY GLOBAL BUT SHOULDN'T BE
-        // -------------------------------------------
-        let color: [f32; 4] = [0.0, 0.0, 0.0, 0.0]; // Color as RGBA
-        let light_direction: [f32; 4] = [1.0, 0.0, 0.0, 0.0];
-
-        // init world and systems
+    async fn new(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        surface: wgpu::Surface,
+        config: wgpu::SurfaceConfiguration,
+        window_size: winit::dpi::PhysicalSize<u32>,
+    ) -> Self {
         let mut world = World::new();
-        let mesh_system = MeshSystem::new(&device);
-        let material_system = MaterialSystem::new(&device, &queue);
-        let globe_render_pipeline_system = GlobeRenderPipelineSystem::new(&device);
-        let billboard_render_pipeline_system = BillboardRenderPipelineSystem::new(&device);
 
         // CAMERA
-        let camera_system = CameraSystem::new(&device);
         let (
             camera,
             camera_uniform,
@@ -119,7 +74,7 @@ impl State {
             camera_bind_group,
             camera_bind_group_layout,
             camera_controller,
-        ) = camera_system.create_camera(config.width, config.height);
+        ) = CameraSystem::create_camera(&device, config.width, config.height);
         let camera_component = CameraComponent {
             camera,
             camera_uniform,
@@ -128,8 +83,9 @@ impl State {
             camera_bind_group_layout,
             camera_controller,
         };
-        // pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
 
+        // DEPTH TEXTURE
+        // pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
         // let depth_size = wgpu::Extent3d {
         //     // 2.
         //     width: config.width,
@@ -169,16 +125,22 @@ impl State {
         // GLOBE
         // mesh
         let globe_radius = 100.0;
-
         let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
-        let globe_matrix_bind_group_layout = mesh_system.create_model_matrix_bind_group_layout();
-        let globe_matrix_bind_group = mesh_system
-            .create_mode_matrix_bind_group(&globe_matrix_bind_group_layout, globe_matrix.clone());
+        let globe_matrix_bind_group_layout =
+            MeshSystem::create_model_matrix_bind_group_layout(&device);
+        let globe_matrix_bind_group = MeshSystem::create_mode_matrix_bind_group(
+            &device,
+            &globe_matrix_bind_group_layout,
+            globe_matrix.clone(),
+        );
         let (globe_vertices_vec, globe_indices_vec) =
             MeshSystem::generate_sphere_mesh(globe_radius.clone(), 90);
         let globe_mesh_component = MeshComponent {
-            vertex_buffer: mesh_system.create_vertex_buffer(&globe_vertices_vec.as_slice()),
-            index_buffer: mesh_system.create_index_buffer(&globe_indices_vec.as_slice()),
+            vertex_buffer: MeshSystem::create_vertex_buffer(
+                &device,
+                &globe_vertices_vec.as_slice(),
+            ),
+            index_buffer: MeshSystem::create_index_buffer(&device, &globe_indices_vec.as_slice()),
             num_indices: globe_indices_vec.len() as u32,
             model_matrix_bind_group_layout: globe_matrix_bind_group_layout,
             model_matrix_bind_group: globe_matrix_bind_group,
@@ -194,11 +156,11 @@ impl State {
             include_bytes!("./assets/6.png"),
         ]);
         let (materal_bind_group, material_bind_group_layout) =
-            material_system.create_cube_map_texture(globe_image_data.clone());
+            MaterialSystem::create_cube_map_texture(&device, &queue, globe_image_data.clone());
         let globe_material_component = MaterialComponent {
             bind_group: materal_bind_group,
             bind_group_layout: material_bind_group_layout,
-            uniforms: vec![color, light_direction],
+            uniforms: None,
             shader: device.create_shader_module(wgpu::include_wgsl!("./shaders/globe_shader.wgsl")),
         };
 
@@ -209,8 +171,9 @@ impl State {
             &globe_mesh_component.model_matrix_bind_group_layout,
         ];
         let globe_render_pipeline_layout =
-            globe_render_pipeline_system.layout_desc(globe_pipeline_layouts);
-        let globe_render_pipeline = globe_render_pipeline_system.pipeline_desc(
+            GlobeRenderPipelineSystem::layout_desc(&device, globe_pipeline_layouts);
+        let globe_render_pipeline = GlobeRenderPipelineSystem::pipeline_desc(
+            &device,
             &globe_render_pipeline_layout,
             &globe_material_component.shader,
             config.format,
@@ -237,16 +200,23 @@ impl State {
         let translation = cgmath::Vector3::new(x, y, z);
         let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation));
         let billboard_matrix_bind_group_layout =
-            mesh_system.create_model_matrix_bind_group_layout();
-        let billboard_matrix_bind_group = mesh_system.create_mode_matrix_bind_group(
+            MeshSystem::create_model_matrix_bind_group_layout(&device);
+        let billboard_matrix_bind_group = MeshSystem::create_mode_matrix_bind_group(
+            &device,
             &billboard_matrix_bind_group_layout,
             billboard_matrix.clone(),
         );
         let (billboard_vertices_vec, billboard_indices_vec) =
             MeshSystem::generate_rectangle_mesh(billboard_size);
         let billboard_mesh_component = MeshComponent {
-            vertex_buffer: mesh_system.create_vertex_buffer(&billboard_vertices_vec.as_slice()),
-            index_buffer: mesh_system.create_index_buffer(&billboard_indices_vec.as_slice()),
+            vertex_buffer: MeshSystem::create_vertex_buffer(
+                &device,
+                &billboard_vertices_vec.as_slice(),
+            ),
+            index_buffer: MeshSystem::create_index_buffer(
+                &device,
+                &billboard_indices_vec.as_slice(),
+            ),
             num_indices: billboard_indices_vec.len() as u32,
             model_matrix_bind_group_layout: billboard_matrix_bind_group_layout,
             model_matrix_bind_group: billboard_matrix_bind_group,
@@ -259,11 +229,11 @@ impl State {
             .expect("Failed to load image from memory");
         let billboard_image_buffer = billboard_dyn_image.to_rgba8();
         let (materal_bind_group, material_bind_group_layout) =
-            material_system.create_2d_texture(billboard_image_buffer);
+            MaterialSystem::create_2d_texture(&device, &queue, billboard_image_buffer);
         let billboard_material_component = MaterialComponent {
             bind_group: materal_bind_group,
             bind_group_layout: material_bind_group_layout,
-            uniforms: vec![color, light_direction],
+            uniforms: None,
             shader: device
                 .create_shader_module(wgpu::include_wgsl!("./shaders/billboard_shader.wgsl")),
         };
@@ -275,8 +245,9 @@ impl State {
             &billboard_mesh_component.model_matrix_bind_group_layout,
         ];
         let billboard_render_pipeline_layout =
-            billboard_render_pipeline_system.layout_desc(billboard_pipeline_layouts);
-        let billboard_render_pipeline = billboard_render_pipeline_system.pipeline_desc(
+            BillboardRenderPipelineSystem::layout_desc(&device, billboard_pipeline_layouts);
+        let billboard_render_pipeline = BillboardRenderPipelineSystem::pipeline_desc(
+            &device,
             &billboard_render_pipeline_layout,
             &billboard_material_component.shader,
             config.format,
@@ -297,7 +268,7 @@ impl State {
             device,
             queue,
             config,
-            size,
+            window_size,
             camera_component,
             world,
             screen_coords: None,
@@ -344,7 +315,7 @@ impl State {
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
+            self.window_size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
@@ -355,6 +326,9 @@ impl State {
         match event {
             WindowEvent::MouseInput { button, state, .. } => {
                 if button == &MouseButton::Left && state == &ElementState::Pressed {
+                    // todo: make WindowSystem and put event handlers like click and resize there
+                    // WindowSystem::handle_left_click();
+
                     let screen_width = self.config.width as f32;
                     let screen_height = self.config.height as f32;
                     let position_x = self.screen_coords.unwrap().x as f32;
@@ -435,15 +409,14 @@ impl State {
             _ => {}
         }
 
-        self.camera_component
-            .camera_controller
-            .process_key_events(event)
+        CameraSystem::process_key_events(&mut self.camera_component.camera_controller, event)
     }
 
     fn update(&mut self) {
-        self.camera_component
-            .camera_controller
-            .update_camera(&mut self.camera_component.camera);
+        CameraSystem::update_camera(
+            &mut self.camera_component.camera_controller,
+            &mut self.camera_component.camera,
+        );
         self.camera_component
             .camera_uniform
             .update_view_proj(&self.camera_component.camera);
@@ -555,7 +528,7 @@ pub async fn run() {
     #[cfg(target_arch = "wasm32")]
     {
         // Winit prevents sizing with CSS, so we have to
-        // set the size manually when on web.
+        // set the window_size manually when on web.
         use winit::dpi::PhysicalSize;
         window.set_inner_size(PhysicalSize::new(800, 600));
 
@@ -572,7 +545,42 @@ pub async fn run() {
             .expect("Couldn't append canvas to div.");
     }
 
-    let mut state = State::new(&window).await;
+    let window_size = window.inner_size();
+
+    // The instance is a handle to our GPU
+    // Backends::all => Vulkan + Metal + DX12 + Browser WebGPU
+    let instance = State::create_instance();
+
+    // # Safety
+    // The surface needs to live as long as the window that created it.
+    // State owns the window so this should be safe.
+    let surface = unsafe { instance.create_surface(&window) }.unwrap();
+    let adapter = State::create_adapter(&instance, &surface).await;
+    let (device, queue) = State::create_device_and_queue(&adapter).await;
+
+    let surface_caps = surface.get_capabilities(&adapter);
+    // Shader code in this tutorial assumes an sRGB surface texture. Using a different
+    // one will result all the colors coming out darker. If you want to support non
+    // sRGB surfaces, you'll need to account for that when drawing to the frame.
+    let surface_format = surface_caps
+        .formats
+        .iter()
+        .copied()
+        .find(|f| f.is_srgb())
+        .unwrap_or(surface_caps.formats[0]);
+
+    let config = wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: surface_format,
+        width: window_size.width,
+        height: window_size.height,
+        present_mode: surface_caps.present_modes[0],
+        alpha_mode: surface_caps.alpha_modes[0],
+        view_formats: vec![],
+    };
+    surface.configure(&device, &config);
+
+    let mut state = State::new(device, queue, surface, config, window_size).await;
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -607,7 +615,7 @@ pub async fn run() {
             match state.render() {
                 Ok(_) => {}
                 // Reconfigure the surface if lost
-                Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                Err(wgpu::SurfaceError::Lost) => state.resize(state.window_size),
                 // The system is out of memory, we should probably quit
                 Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                 // All other errors (Outdated, Timeout) should be resolved by the next frame
