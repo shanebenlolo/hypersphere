@@ -2,23 +2,25 @@ mod components;
 mod systems;
 mod world;
 
-use cgmath::{InnerSpace, SquareMatrix, Vector3};
+use cgmath::SquareMatrix;
 use components::{
     camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
     render_pipelines::RenderPipelineComponent,
 };
 use systems::{
+    billboard::BillboardSystem,
     camera::CameraSystem,
     material::MaterialSystem,
     mesh::MeshSystem,
     render_pipelines::{BillboardRenderPipelineSystem, GlobeRenderPipelineSystem},
+    window::WindowSystem,
 };
 use wgpu::Surface;
 use winit::{
     dpi::PhysicalPosition,
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    window::WindowBuilder,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -51,7 +53,7 @@ struct State {
 
     camera_component: CameraComponent,
 
-    // depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
+    depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
     screen_coords: Option<PhysicalPosition<f64>>,
     globe_radius: f32,
 }
@@ -84,43 +86,42 @@ impl State {
             camera_controller,
         };
 
-        // DEPTH TEXTURE
-        // pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
-        // let depth_size = wgpu::Extent3d {
-        //     // 2.
-        //     width: config.width,
-        //     height: config.height,
-        //     depth_or_array_layers: 1,
-        // };
-        // let desc = wgpu::TextureDescriptor {
-        //     label: Some("depth texture"),
-        //     size: depth_size,
-        //     mip_level_count: 1,
-        //     sample_count: 1,
-        //     dimension: wgpu::TextureDimension::D2,
-        //     format: DEPTH_FORMAT,
-        //     usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
-        //             | wgpu::TextureUsages::TEXTURE_BINDING,
-        //     view_formats: &[],
-        // };
-        // let texture = device.create_texture(&desc);
+        // DEPTH TEXTURE (sadly wasm only for now)
+        pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
+        let depth_size = wgpu::Extent3d {
+            // 2.
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("depth texture"),
+            size: depth_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
 
-        // let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        // let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        //     // 4.
-        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
-        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
-        //     address_mode_w: wgpu::AddressMode::ClampToEdge,
-        //     mag_filter: wgpu::FilterMode::Linear,
-        //     min_filter: wgpu::FilterMode::Linear,
-        //     mipmap_filter: wgpu::FilterMode::Nearest,
-        //     compare: Some(wgpu::CompareFunction::Always), // 5.
-        //     lod_min_clamp: 0.0,
-        //     lod_max_clamp: 100.0,
-        //     ..Default::default()
-        // });
-
-        // let depth_texture = (texture, view, sampler);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            // 4.
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::Always), // 5.
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+        let depth_texture = (texture, view, sampler);
 
         // GLOBE
         // mesh
@@ -183,85 +184,10 @@ impl State {
             render_pipeline_layout: globe_render_pipeline_layout,
         };
 
-        // create entity with components
         let globe_entity = world.new_entity();
         world.add_component_to_entity(globe_entity, globe_mesh_component);
         world.add_component_to_entity(globe_entity, globe_material_component);
         world.add_component_to_entity(globe_entity, globe_render_pipeline_component);
-
-        // BILLBOARDS
-        // mesh
-
-        let billboard_lat = 27.0;
-        let billboard_lon = 81.0;
-        let billboard_size = (10.0, 10.0);
-        let (x, y, z) =
-            MeshSystem::lat_lon_to_cartesian(billboard_lat, billboard_lon, globe_radius);
-        let translation = cgmath::Vector3::new(x, y, z);
-        let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation));
-        let billboard_matrix_bind_group_layout =
-            MeshSystem::create_model_matrix_bind_group_layout(&device);
-        let billboard_matrix_bind_group = MeshSystem::create_mode_matrix_bind_group(
-            &device,
-            &billboard_matrix_bind_group_layout,
-            billboard_matrix.clone(),
-        );
-        let (billboard_vertices_vec, billboard_indices_vec) =
-            MeshSystem::generate_rectangle_mesh(billboard_size);
-        let billboard_mesh_component = MeshComponent {
-            vertex_buffer: MeshSystem::create_vertex_buffer(
-                &device,
-                &billboard_vertices_vec.as_slice(),
-            ),
-            index_buffer: MeshSystem::create_index_buffer(
-                &device,
-                &billboard_indices_vec.as_slice(),
-            ),
-            num_indices: billboard_indices_vec.len() as u32,
-            model_matrix_bind_group_layout: billboard_matrix_bind_group_layout,
-            model_matrix_bind_group: billboard_matrix_bind_group,
-            model_matrix: billboard_matrix,
-        };
-
-        // material
-        let billboard_image_data = include_bytes!("./assets/billboard.png");
-        let billboard_dyn_image = image::load_from_memory(billboard_image_data)
-            .expect("Failed to load image from memory");
-        let billboard_image_buffer = billboard_dyn_image.to_rgba8();
-        let (materal_bind_group, material_bind_group_layout) =
-            MaterialSystem::create_2d_texture(&device, &queue, billboard_image_buffer);
-        let billboard_material_component = MaterialComponent {
-            bind_group: materal_bind_group,
-            bind_group_layout: material_bind_group_layout,
-            uniforms: None,
-            shader: device
-                .create_shader_module(wgpu::include_wgsl!("./shaders/billboard_shader.wgsl")),
-        };
-
-        // render_pipeline
-        let billboard_pipeline_layouts: &[&wgpu::BindGroupLayout] = &[
-            &camera_component.camera_bind_group_layout,
-            &billboard_material_component.bind_group_layout,
-            &billboard_mesh_component.model_matrix_bind_group_layout,
-        ];
-        let billboard_render_pipeline_layout =
-            BillboardRenderPipelineSystem::layout_desc(&device, billboard_pipeline_layouts);
-        let billboard_render_pipeline = BillboardRenderPipelineSystem::pipeline_desc(
-            &device,
-            &billboard_render_pipeline_layout,
-            &billboard_material_component.shader,
-            config.format,
-        );
-        let billboard_render_pipeline_component = RenderPipelineComponent {
-            render_pipeline: billboard_render_pipeline,
-            render_pipeline_layout: billboard_render_pipeline_layout,
-        };
-
-        // create entity with components
-        let billboard_entity = world.new_entity();
-        world.add_component_to_entity(billboard_entity, billboard_mesh_component);
-        world.add_component_to_entity(billboard_entity, billboard_render_pipeline_component);
-        world.add_component_to_entity(billboard_entity, billboard_material_component);
 
         Self {
             surface,
@@ -272,14 +198,18 @@ impl State {
             camera_component,
             world,
             screen_coords: None,
-            globe_radius, // depth_texture,
+            globe_radius,
+            depth_texture,
         }
     }
 
     pub fn create_instance() -> wgpu::Instance {
         wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            dx12_shader_compiler: Default::default(),
+            dx12_shader_compiler: wgpu::Dx12Compiler::Dxc {
+                dxil_path: None,
+                dxc_path: None,
+            },
         })
     }
     pub async fn create_adapter(instance: &wgpu::Instance, surface: &Surface) -> wgpu::Adapter {
@@ -325,81 +255,45 @@ impl State {
     fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::MouseInput { button, state, .. } => {
+                let screen_width = self.config.width as f32;
+                let screen_height = self.config.height as f32;
+                let position_x = self.screen_coords.unwrap().x as f32;
+                let position_y = self.screen_coords.unwrap().y as f32;
+
                 if button == &MouseButton::Left && state == &ElementState::Pressed {
-                    // todo: make WindowSystem and put event handlers like click and resize there
-                    // WindowSystem::handle_left_click();
+                    if let Some((lat, lon)) = WindowSystem::handle_left_click(
+                        screen_width,
+                        screen_height,
+                        position_x,
+                        position_y,
+                        self.globe_radius,
+                        &self.camera_component,
+                    ) {
+                        let size = 10.0;
+                        let billboard_mesh = BillboardSystem::create_billboard_mesh(
+                            &self.device,
+                            size,
+                            lat,
+                            lon,
+                            self.globe_radius,
+                        );
+                        let billboard_material =
+                            BillboardSystem::create_billboard_material(&self.device, &self.queue);
+                        let billboard_render_pipeline = BillboardSystem::create_render_pipeline(
+                            &self.device,
+                            &self.camera_component,
+                            &billboard_material,
+                            &billboard_mesh,
+                            &self.config.format,
+                        );
 
-                    let screen_width = self.config.width as f32;
-                    let screen_height = self.config.height as f32;
-                    let position_x = self.screen_coords.unwrap().x as f32;
-                    let position_y = self.screen_coords.unwrap().y as f32;
-                    let view_proj_matrix = cgmath::Matrix4::from(
-                        self.camera_component.camera_uniform.view_proj_matrix,
-                    );
-
-                    let mouse_pos_clip_near = cgmath::Vector4::new(
-                        (position_x * 2.0) / screen_width - 1.0,
-                        1.0 - (2.0 * position_y) / screen_height,
-                        self.camera_component.camera.znear,
-                        1.0,
-                    );
-
-                    let mouse_pos_clip_far = cgmath::Vector4::new(
-                        (position_x * 2.0) / screen_width - 1.0,
-                        1.0 - (2.0 * position_y) / screen_height,
-                        self.camera_component.camera.zfar,
-                        1.0,
-                    );
-
-                    // Transform these points to world space
-                    let mouse_pos_world_near =
-                        (view_proj_matrix).invert().unwrap() * mouse_pos_clip_near;
-                    let mouse_pos_world_far =
-                        (view_proj_matrix).invert().unwrap() * mouse_pos_clip_far;
-
-                    // Convert from homogeneous to Cartesian coordinates
-                    let mouse_pos_world_near =
-                        mouse_pos_world_near.truncate() / mouse_pos_world_near.w;
-                    let mouse_pos_world_far =
-                        mouse_pos_world_far.truncate() / mouse_pos_world_far.w;
-
-                    // Create the ray
-                    // needs to be a matrix4
-                    let ray_origin = Vector3::new(
-                        self.camera_component.camera.eye.x,
-                        self.camera_component.camera.eye.y,
-                        self.camera_component.camera.eye.z,
-                    );
-                    let ray_direction = (mouse_pos_world_far - mouse_pos_world_near).normalize();
-
-                    let oc = ray_origin - cgmath::Vector3::new(0.0, 0.0, 0.0);
-                    let a = ray_direction.dot(ray_direction);
-                    let b = 2.0 * oc.dot(ray_direction);
-                    let c = oc.dot(oc) - self.globe_radius * self.globe_radius;
-                    let discriminant = b * b - 4.0 * a * c;
-
-                    // intersection
-                    if discriminant >= 0.0 {
-                        let discriminant_sqrt = discriminant.sqrt();
-                        let t1 = (-b - discriminant_sqrt) / (2.0 * a);
-                        let t2 = (-b + discriminant_sqrt) / (2.0 * a);
-
-                        let t = if t1 > 0.0 && (t2 < 0.0 || t1 < t2) {
-                            t1
-                        } else {
-                            t2
-                        };
-
-                        let intersection_point = ray_origin + ray_direction * t;
-
-                        // Calculate Latitude (φ) and Longitude (λ)
-                        let normalized_point = intersection_point.normalize(); // Make sure it's on the unit sphere
-
-                        let latitude = normalized_point.y.asin().to_degrees(); // Convert radians to degrees
-                        let longitude = normalized_point.z.atan2(normalized_point.x).to_degrees(); // Convert radians to degrees
-                        println!("lat: {:?}, lon: {:?}", latitude, longitude);
-                    } else {
-                        // No intersection with the sphere
+                        let billboard_entity = self.world.new_entity();
+                        self.world
+                            .add_component_to_entity(billboard_entity, billboard_mesh);
+                        self.world
+                            .add_component_to_entity(billboard_entity, billboard_render_pipeline);
+                        self.world
+                            .add_component_to_entity(billboard_entity, billboard_material);
                     }
                 }
             }
@@ -461,15 +355,19 @@ impl State {
                     store: true,
                 },
             })],
+
+            // depth stencil only working on wasm :(
+            #[cfg(not(target_arch = "wasm32"))]
             depth_stencil_attachment: None,
-            // depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            //     view: &self.depth_texture.1,
-            //     depth_ops: Some(wgpu::Operations {
-            //         load: wgpu::LoadOp::Clear(1.0),
-            //         store: true,
-            //     }),
-            //     stencil_ops: None,
-            // }),
+            #[cfg(target_arch = "wasm32")]
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_texture.1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            }),
         });
 
         render_pass.set_bind_group(0, &self.camera_component.camera_bind_group, &[]);

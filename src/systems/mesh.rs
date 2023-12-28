@@ -1,6 +1,9 @@
 use wgpu::util::DeviceExt;
 
-use crate::components::mesh::{BillboardVertex, Vertex};
+use crate::{
+    components::mesh::{BillboardVertex, MeshComponent, Vertex},
+    matrix4_to_array,
+};
 
 pub struct MeshSystem {}
 
@@ -108,11 +111,12 @@ impl MeshSystem {
         (vertices, indices)
     }
 
-    pub fn generate_rectangle_mesh(size: (f32, f32)) -> (Vec<BillboardVertex>, Vec<u32>) {
+    pub fn generate_square_mesh(size: f32) -> (Vec<BillboardVertex>, Vec<u32>) {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
-        let (width, height) = size;
+        let width = size;
+        let height = size;
         let half_width = width / 2.0;
         let half_height = height / 2.0;
 

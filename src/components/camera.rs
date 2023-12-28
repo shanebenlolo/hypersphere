@@ -47,13 +47,26 @@ impl Camera {
         cgmath::Matrix4<f32>,
         cgmath::Matrix4<f32>,
     ) {
+        #[cfg(target_arch = "wasm32")]
         // you'll need to figure out how to fix the matrix for the web for proper ray-casting:
         // OPENGL_TO_WGPU_MATRIX * proj * view,
         // OPENGL_TO_WGPU_MATRIX * view.clone(),
         // OPENGL_TO_WGPU_MATRIX * proj.clone(),
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-        return (proj * view, view.clone(), proj.clone());
+        // ^^ does not work. cannot figure out solution...
+        {
+            let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+            let proj =
+                cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+            return (proj * view, view.clone(), proj.clone());
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+            let proj =
+                cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+            return (proj * view, view.clone(), proj.clone());
+        }
     }
 }
 

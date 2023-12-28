@@ -61,14 +61,18 @@ impl GlobeRenderPipelineSystem {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
+
+            // depth stencil only working on wasm :(
+            #[cfg(not(target_arch = "wasm32"))]
             depth_stencil: None,
-            // depth_stencil: Some(wgpu::DepthStencilState {
-            //     format: DEPTH_FORMAT,
-            //     depth_write_enabled: true,
-            //     depth_compare: wgpu::CompareFunction::Less, // 1.
-            //     stencil: wgpu::StencilState::default(),     // 2.
-            //     bias: wgpu::DepthBiasState::default(),
-            // }),
+            #[cfg(target_arch = "wasm32")]
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // 1.
+                stencil: wgpu::StencilState::default(),     // 2.
+                bias: wgpu::DepthBiasState::default(),
+            }),
 
             // Multisampling is a complex topic not being discussed
             multisample: wgpu::MultisampleState {
@@ -107,7 +111,7 @@ impl<'a> BillboardRenderPipelineSystem<'a> {
         device: &wgpu::Device,
         pipeline_layout: &wgpu::PipelineLayout,
         shader_module: &wgpu::ShaderModule,
-        texture_format: wgpu::TextureFormat,
+        texture_format: &wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Billboard Render Pipeline"),
@@ -123,7 +127,7 @@ impl<'a> BillboardRenderPipelineSystem<'a> {
                 module: shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: texture_format,
+                    format: *texture_format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -148,14 +152,18 @@ impl<'a> BillboardRenderPipelineSystem<'a> {
                 unclipped_depth: false,
                 conservative: false,
             },
+
+            // depth stencil only working on wasm :(
+            #[cfg(not(target_arch = "wasm32"))]
             depth_stencil: None,
-            // depth_stencil: Some(wgpu::DepthStencilState {
-            //     format: DEPTH_FORMAT,
-            //     depth_write_enabled: true,
-            //     depth_compare: wgpu::CompareFunction::Less, // 1.
-            //     stencil: wgpu::StencilState::default(),     // 2.
-            //     bias: wgpu::DepthBiasState::default(),
-            // }),
+            #[cfg(target_arch = "wasm32")]
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // 1.
+                stencil: wgpu::StencilState::default(),     // 2.
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
