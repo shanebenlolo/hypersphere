@@ -1,9 +1,8 @@
 use wgpu::util::DeviceExt;
 
-use crate::{
-    components::mesh::{BillboardVertex, MeshComponent, Vertex},
-    matrix4_to_array,
-};
+use crate::components::mesh::{BillboardVertex, Vertex};
+
+const TRI_STRIPS: u32 = 90;
 
 pub struct MeshSystem {}
 
@@ -80,31 +79,31 @@ impl MeshSystem {
         }
     }
 
-    pub fn generate_sphere_mesh(radius: f32, tri_strips: u32) -> (Vec<Vertex>, Vec<u32>) {
+    pub fn generate_sphere_mesh(radius: f32) -> (Vec<Vertex>, Vec<u32>) {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
         // Create vertices
-        for i in 0..=tri_strips {
-            let lat = MeshSystem::map(i, 0, tri_strips, 0.0, std::f32::consts::PI);
-            for j in 0..=tri_strips {
-                let lon = MeshSystem::map(j, 0, tri_strips, 0.0, 2.0 * std::f32::consts::PI);
+        for i in 0..=TRI_STRIPS {
+            let lat = MeshSystem::map(i, 0, TRI_STRIPS, 0.0, std::f32::consts::PI);
+            for j in 0..=TRI_STRIPS {
+                let lon = MeshSystem::map(j, 0, TRI_STRIPS, 0.0, 2.0 * std::f32::consts::PI);
                 vertices.push(MeshSystem::create_vertex(radius, lat, lon));
             }
         }
 
         // Create indices for triangle strips
-        for i in 0..tri_strips {
-            for j in 0..=tri_strips {
-                indices.push(i * (tri_strips + 1) + j); // Vertex in current row
-                indices.push((i + 1) * (tri_strips + 1) + j); // Vertex in next row
+        for i in 0..TRI_STRIPS {
+            for j in 0..=TRI_STRIPS {
+                indices.push(i * (TRI_STRIPS + 1) + j); // Vertex in current row
+                indices.push((i + 1) * (TRI_STRIPS + 1) + j); // Vertex in next row
             }
 
-            if i != tri_strips - 1 {
+            if i != TRI_STRIPS - 1 {
                 // Degenerate triangle to stitch strips together: repeat the last vertex of the current strip
                 // and the first vertex of the next strip
-                indices.push((i + 1) * (tri_strips + 1) + tri_strips);
-                indices.push((i + 1) * (tri_strips + 1));
+                indices.push((i + 1) * (TRI_STRIPS + 1) + TRI_STRIPS);
+                indices.push((i + 1) * (TRI_STRIPS + 1));
             }
         }
 

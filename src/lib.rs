@@ -8,12 +8,8 @@ use components::{
     render_pipelines::RenderPipelineComponent,
 };
 use systems::{
-    billboard::BillboardSystem,
-    camera::CameraSystem,
-    material::MaterialSystem,
-    mesh::MeshSystem,
-    render_pipelines::{BillboardRenderPipelineSystem, GlobeRenderPipelineSystem},
-    window::WindowSystem,
+    billboard::BillboardSystem, camera::CameraSystem, material::MaterialSystem, mesh::MeshSystem,
+    render_pipelines::GlobeRenderPipelineSystem, window::WindowSystem,
 };
 use wgpu::Surface;
 use winit::{
@@ -23,11 +19,19 @@ use winit::{
     window::WindowBuilder,
 };
 
+use anise::{
+    constants::frames::{self},
+    prelude::*,
+};
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{window, KeyboardEvent};
 use world::World;
+
+const WGS84_A: f32 = 6_378.0; // Semi-major axis (equatorial radius) in kilometers
+const WGS84_B: f32 = 6_357.0; // Semi-minor axis (polar radius) in kilometers
 
 // this belongs somewhere else like serialization util or something
 fn matrix4_to_array(mat: cgmath::Matrix4<f32>) -> [[f32; 4]; 4] {
@@ -125,7 +129,6 @@ impl State {
 
         // GLOBE
         // mesh
-        let globe_radius = 100.0;
         let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
         let globe_matrix_bind_group_layout =
             MeshSystem::create_model_matrix_bind_group_layout(&device);
@@ -134,8 +137,9 @@ impl State {
             &globe_matrix_bind_group_layout,
             globe_matrix.clone(),
         );
-        let (globe_vertices_vec, globe_indices_vec) =
-            MeshSystem::generate_sphere_mesh(globe_radius.clone(), 90);
+
+        // you need to fix this to work with both WGS84_A and WGS84_B
+        let (globe_vertices_vec, globe_indices_vec) = MeshSystem::generate_sphere_mesh(WGS84_A);
         let globe_mesh_component = MeshComponent {
             vertex_buffer: MeshSystem::create_vertex_buffer(
                 &device,
@@ -189,6 +193,21 @@ impl State {
         world.add_component_to_entity(globe_entity, globe_material_component);
         world.add_component_to_entity(globe_entity, globe_render_pipeline_component);
 
+        // Test run of anise, will be moving out in next couple of commits
+        let spk = SPK::load("./data/de440s.bsp").unwrap();
+        let ctx = Almanac::from_spk(spk).unwrap();
+        // Define an Epoch in the dynamical barycentric time scale
+        let epoch = Epoch::from_str("2020-11-15 12:34:56.789 TDB").unwrap();
+        let state = ctx
+            .translate_from_to(
+                frames::LUNA_J2000,  // Target
+                frames::EARTH_J2000, // Observer
+                epoch,
+                Aberration::None,
+            )
+            .unwrap();
+        println!("{state}");
+
         Self {
             surface,
             device,
@@ -198,7 +217,7 @@ impl State {
             camera_component,
             world,
             screen_coords: None,
-            globe_radius,
+            globe_radius: WGS84_A,
             depth_texture,
         }
     }
@@ -269,7 +288,7 @@ impl State {
                         self.globe_radius,
                         &self.camera_component,
                     ) {
-                        let size = 10.0;
+                        let size = 500.0;
                         let billboard_mesh = BillboardSystem::create_billboard_mesh(
                             &self.device,
                             size,

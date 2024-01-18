@@ -21,7 +21,7 @@ impl CameraSystem {
         let camera = Camera {
             // position the camera one unit up and 2 units back
             // +z is out of the screen
-            eye: (0.0, 0.0, 400.0).into(),
+            eye: (0.0, 0.0, 20_000.0).into(),
             // have it look at the origin
             target: (0.0, 0.0, 0.0).into(),
             // which way is "up"
@@ -29,7 +29,7 @@ impl CameraSystem {
             aspect: screen_width as f32 / screen_height as f32,
             fovy: 45.0,
             znear: 0.1,
-            zfar: 1000.0,
+            zfar: 100_000.0,
         };
 
         let mut camera_uniform = CameraUniform::new();
@@ -56,7 +56,7 @@ impl CameraSystem {
             &camera_buffer,
             &camera_bind_group_layout,
         );
-        let camera_controller = CameraController::new(10.0);
+        let camera_controller = CameraController::new(500.0);
 
         (
             camera,
@@ -144,14 +144,14 @@ impl CameraSystem {
 
         if cam_controller.is_right_pressed {
             // Rotate the camera around the target point to the right
-            let rotation_angle = cgmath::Rad(cgmath::Deg(cam_controller.speed / 100.0).0); // Convert to radians
+            let rotation_angle = cgmath::Rad(cgmath::Deg(cam_controller.speed / 10000.0).0); // Convert to radians
             let rotation_matrix = cgmath::Matrix3::from_axis_angle(camera.up, -rotation_angle);
             let relative_position = camera.eye - camera.target;
             camera.eye = camera.target + rotation_matrix * relative_position;
         }
         if cam_controller.is_left_pressed {
             // Rotate the camera around the target point to the left
-            let rotation_angle = cgmath::Rad(cgmath::Deg(cam_controller.speed / 100.0).0); // Convert to radians
+            let rotation_angle = cgmath::Rad(cgmath::Deg(cam_controller.speed / 10000.0).0); // Convert to radians
             let rotation_matrix = cgmath::Matrix3::from_axis_angle(camera.up, rotation_angle);
             let relative_position = camera.eye - camera.target;
             camera.eye = camera.target + rotation_matrix * relative_position;

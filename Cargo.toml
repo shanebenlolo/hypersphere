@@ -20,6 +20,7 @@ pollster = "0.3"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 anyhow = "1.0"
 cgmath = "0.18.0"
+anise = "^0.1"
 
 
 # Decoding jpegs in WASM isn't very performant.
