@@ -1,5 +1,23 @@
 A high-performance web-based geospatial visualization tool with an emphasis LEO satellites and lunar missions. Written in Rust to target WebGPU, with WebGL2 backwards compatibility.
 
+## set up ANISE for geospatial library:
+
+# This shell script sets up the development environment on Linux
+
+curl https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z --output cspice.tar.Z
+tar xzvf cspice.tar.Z
+cd cspice
+tcsh makeall.csh
+mv lib/cspice.a lib/libcspice.a
+
+# download data used by ANISE:
+
+clone https://github.com/nyx-space/anise
+cd anise
+sudo apt-get install git-lfs
+git-lfs pull
+cp -r ./data ~/hypersphere/data
+
 ## To run the application locally:
 
 ```
@@ -17,9 +35,10 @@ once compiled, serve your index.html page (I have been using live server)
 ## Upcoming features:
 
 - Proper World Geodetic System implementation of globe
-- lat lon picking on click using inverse view matrix and ray-sphere intersection
 - model loading
 - line / arc drawing
-- add time system for simulations (need to find out standard data format) including earth rotation
 - add moon entity and map LRO images to surface (maybe a selenographic coordinate system?),
-- add sun and maybe a simple ray tracer (need to look into performance on single thread, probably not great)
+- add ability to switch view from earth to moon and also switch the target / observer for accurate relative location
+- add time system for simulations including earth rotation and moon rotation
+- host bsp data from server not from hardcoded file (or a better option will probably be allowing uploads of bsp data...)
+- add subtle depth map to earth and atmosphere
