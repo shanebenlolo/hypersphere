@@ -2,15 +2,11 @@ mod components;
 mod systems;
 mod world;
 
-use cgmath::SquareMatrix;
 use components::{
     camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
     render_pipelines::RenderPipelineComponent,
 };
-use systems::{
-    billboard::BillboardSystem, camera::CameraSystem, material::MaterialSystem, mesh::MeshSystem,
-    render_pipelines::GlobeRenderPipelineSystem, window::WindowSystem,
-};
+use systems::{billboard::BillboardSystem, camera::CameraSystem, window::WindowSystem};
 use wgpu::Surface;
 use winit::{
     dpi::PhysicalPosition,
@@ -30,8 +26,10 @@ use wasm_bindgen::prelude::*;
 use web_sys::{window, KeyboardEvent};
 use world::World;
 
-const WGS84_A: f32 = 6_378.0; // Semi-major axis (equatorial radius) in kilometers
-const WGS84_B: f32 = 6_357.0; // Semi-minor axis (polar radius) in kilometers
+use crate::{components::earth::EarthComponent, systems::earth::EarthSystem};
+
+pub const WGS84_A: f32 = 6_378.0; // Semi-major axis (equatorial radius) in kilometers
+pub const WGS84_B: f32 = 6_357.0; // Semi-minor axis (polar radius) in kilometers
 
 // this belongs somewhere else like serialization util or something
 fn matrix4_to_array(mat: cgmath::Matrix4<f32>) -> [[f32; 4]; 4] {
@@ -54,12 +52,10 @@ struct State {
 
     // scene
     world: World,
-
     camera_component: CameraComponent,
-
     depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
     screen_coords: Option<PhysicalPosition<f64>>,
-    globe_radius: f32,
+    earth_radius: f32,
 }
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
 impl State {
@@ -127,71 +123,17 @@ impl State {
         });
         let depth_texture = (texture, view, sampler);
 
-        // GLOBE
-        // mesh
-        let globe_matrix = matrix4_to_array(cgmath::Matrix4::identity());
-        let globe_matrix_bind_group_layout =
-            MeshSystem::create_model_matrix_bind_group_layout(&device);
-        let globe_matrix_bind_group = MeshSystem::create_mode_matrix_bind_group(
-            &device,
-            &globe_matrix_bind_group_layout,
-            globe_matrix.clone(),
-        );
-
-        // you need to fix this to work with both WGS84_A and WGS84_B
-        let (globe_vertices_vec, globe_indices_vec) = MeshSystem::generate_sphere_mesh(WGS84_A);
-        let globe_mesh_component = MeshComponent {
-            vertex_buffer: MeshSystem::create_vertex_buffer(
-                &device,
-                &globe_vertices_vec.as_slice(),
-            ),
-            index_buffer: MeshSystem::create_index_buffer(&device, &globe_indices_vec.as_slice()),
-            num_indices: globe_indices_vec.len() as u32,
-            model_matrix_bind_group_layout: globe_matrix_bind_group_layout,
-            model_matrix_bind_group: globe_matrix_bind_group,
-            model_matrix: globe_matrix,
+        let (earth_mesh_component, earth_material_component, earth_render_pipeline_component) =
+            EarthSystem::new(&device, &queue, config.format.clone(), &camera_component);
+        let earth_component = EarthComponent {
+            mesh_component: earth_mesh_component,
+            material_component: earth_material_component,
+            render_pipeline_component: earth_render_pipeline_component,
         };
-        // material
-        let globe_image_data = MaterialSystem::cube_map_buffer_from_urls(vec![
-            include_bytes!("./assets/1.png"),
-            include_bytes!("./assets/2.png"),
-            include_bytes!("./assets/3.png"),
-            include_bytes!("./assets/4.png"),
-            include_bytes!("./assets/5.png"),
-            include_bytes!("./assets/6.png"),
-        ]);
-        let (materal_bind_group, material_bind_group_layout) =
-            MaterialSystem::create_cube_map_texture(&device, &queue, globe_image_data.clone());
-        let globe_material_component = MaterialComponent {
-            bind_group: materal_bind_group,
-            bind_group_layout: material_bind_group_layout,
-            uniforms: None,
-            shader: device.create_shader_module(wgpu::include_wgsl!("./shaders/globe_shader.wgsl")),
-        };
-
-        // render_pipeline
-        let globe_pipeline_layouts: &[&wgpu::BindGroupLayout] = &[
-            &camera_component.camera_bind_group_layout,
-            &globe_material_component.bind_group_layout,
-            &globe_mesh_component.model_matrix_bind_group_layout,
-        ];
-        let globe_render_pipeline_layout =
-            GlobeRenderPipelineSystem::layout_desc(&device, globe_pipeline_layouts);
-        let globe_render_pipeline = GlobeRenderPipelineSystem::pipeline_desc(
-            &device,
-            &globe_render_pipeline_layout,
-            &globe_material_component.shader,
-            config.format,
-        );
-        let globe_render_pipeline_component = RenderPipelineComponent {
-            render_pipeline: globe_render_pipeline,
-            render_pipeline_layout: globe_render_pipeline_layout,
-        };
-
-        let globe_entity = world.new_entity();
-        world.add_component_to_entity(globe_entity, globe_mesh_component);
-        world.add_component_to_entity(globe_entity, globe_material_component);
-        world.add_component_to_entity(globe_entity, globe_render_pipeline_component);
+        let earth_entity = world.new_entity();
+        world.add_component_to_entity(earth_entity, earth_component.mesh_component);
+        world.add_component_to_entity(earth_entity, earth_component.material_component);
+        world.add_component_to_entity(earth_entity, earth_component.render_pipeline_component);
 
         // Test run of anise, will be moving out in next couple of commits
         let spk = SPK::load("./data/de440s.bsp").unwrap();
@@ -217,7 +159,7 @@ impl State {
             camera_component,
             world,
             screen_coords: None,
-            globe_radius: WGS84_A,
+            earth_radius: WGS84_A,
             depth_texture,
         }
     }
@@ -285,7 +227,7 @@ impl State {
                         screen_height,
                         position_x,
                         position_y,
-                        self.globe_radius,
+                        self.earth_radius,
                         &self.camera_component,
                     ) {
                         let size = 500.0;
@@ -294,7 +236,7 @@ impl State {
                             size,
                             lat,
                             lon,
-                            self.globe_radius,
+                            self.earth_radius,
                         );
                         let billboard_material =
                             BillboardSystem::create_billboard_material(&self.device, &self.queue);

@@ -1,17 +1,14 @@
-use crate::{
-    components::mesh::{BillboardVertex, Vertex},
-    DEPTH_FORMAT,
-};
+use crate::components::mesh::{BillboardVertex, Vertex};
 
-pub struct GlobeRenderPipelineSystem {}
+pub struct EarthRenderPipelineSystem {}
 
-impl GlobeRenderPipelineSystem {
+impl EarthRenderPipelineSystem {
     pub fn layout_desc(
         device: &wgpu::Device,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
     ) -> wgpu::PipelineLayout {
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Globe Render Pipeline Layout"),
+            label: Some("Earth Render Pipeline Layout"),
             bind_group_layouts,
             push_constant_ranges: &[],
         })
@@ -24,7 +21,7 @@ impl GlobeRenderPipelineSystem {
         texture_format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Globe Render Pipeline"),
+            label: Some("Earth Render Pipeline"),
             layout: Some(pipeline_layout),
 
             vertex: wgpu::VertexState {
@@ -101,7 +98,7 @@ impl<'a> BillboardRenderPipelineSystem<'a> {
         bind_group_layouts: &[&wgpu::BindGroupLayout],
     ) -> wgpu::PipelineLayout {
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Globe Render Pipeline Layout"),
+            label: Some("Earth Render Pipeline Layout"),
             bind_group_layouts,
             push_constant_ranges: &[],
         })
