@@ -23,7 +23,7 @@ impl MeshSystem {
         })
     }
 
-    pub fn create_mode_matrix_bind_group(
+    pub fn create_model_matrix_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         model_matrix: [[f32; 4]; 4],

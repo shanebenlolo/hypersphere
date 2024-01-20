@@ -41,7 +41,7 @@ impl EarthSystem {
         let earth_matrix = matrix4_to_array(cgmath::Matrix4::identity());
         let earth_matrix_bind_group_layout =
             MeshSystem::create_model_matrix_bind_group_layout(device);
-        let earth_matrix_bind_group = MeshSystem::create_mode_matrix_bind_group(
+        let earth_matrix_bind_group = MeshSystem::create_model_matrix_bind_group(
             &device,
             &earth_matrix_bind_group_layout,
             earth_matrix.clone(),

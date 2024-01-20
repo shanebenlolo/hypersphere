@@ -29,7 +29,7 @@ impl CameraSystem {
             aspect: screen_width as f32 / screen_height as f32,
             fovy: 45.0,
             znear: 0.1,
-            zfar: 100_000.0,
+            zfar: 100_000_000.0,
         };
 
         let mut camera_uniform = CameraUniform::new();
@@ -56,7 +56,7 @@ impl CameraSystem {
             &camera_buffer,
             &camera_bind_group_layout,
         );
-        let camera_controller = CameraController::new(500.0);
+        let camera_controller = CameraController::new(50000.0);
 
         (
             camera,

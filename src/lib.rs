@@ -7,6 +7,7 @@ use components::{
     render_pipelines::RenderPipelineComponent,
 };
 use systems::{billboard::BillboardSystem, camera::CameraSystem, window::WindowSystem};
+use tracing_subscriber::fmt::time::UtcTime;
 use wgpu::Surface;
 use winit::{
     dpi::PhysicalPosition,
@@ -26,7 +27,12 @@ use wasm_bindgen::prelude::*;
 use web_sys::{window, KeyboardEvent};
 use world::World;
 
-use crate::{components::earth::EarthComponent, systems::earth::EarthSystem};
+use crate::{
+    components::{earth::EarthComponent, moon::MoonComponent},
+    systems::{earth::EarthSystem, moon::MoonSystem},
+};
+
+use chrono::{DateTime, Local, Utc};
 
 pub const WGS84_A: f32 = 6_378.0; // Semi-major axis (equatorial radius) in kilometers
 pub const WGS84_B: f32 = 6_357.0; // Semi-minor axis (polar radius) in kilometers
@@ -55,7 +61,12 @@ struct State {
     camera_component: CameraComponent,
     depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
     screen_coords: Option<PhysicalPosition<f64>>,
+
     earth_radius: f32,
+    earth_entity: usize,
+    moon_entity: usize,
+
+    current_time: DateTime<Utc>,
 }
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
 impl State {
@@ -135,6 +146,18 @@ impl State {
         world.add_component_to_entity(earth_entity, earth_component.material_component);
         world.add_component_to_entity(earth_entity, earth_component.render_pipeline_component);
 
+        let (moon_mesh_component, moon_material_component, moon_render_pipeline_component) =
+            MoonSystem::new(&device, &queue, config.format.clone(), &camera_component);
+        let moon_component = MoonComponent {
+            mesh_component: moon_mesh_component,
+            material_component: moon_material_component,
+            render_pipeline_component: moon_render_pipeline_component,
+        };
+        let moon_entity = world.new_entity();
+        world.add_component_to_entity(moon_entity, moon_component.mesh_component);
+        world.add_component_to_entity(moon_entity, moon_component.material_component);
+        world.add_component_to_entity(moon_entity, moon_component.render_pipeline_component);
+
         // Test run of anise, will be moving out in next couple of commits
         let spk = SPK::load("./data/de440s.bsp").unwrap();
         let ctx = Almanac::from_spk(spk).unwrap();
@@ -161,6 +184,9 @@ impl State {
             screen_coords: None,
             earth_radius: WGS84_A,
             depth_texture,
+            current_time: Utc::now(),
+            earth_entity,
+            moon_entity,
         }
     }
 
@@ -268,6 +294,18 @@ impl State {
     }
 
     fn update(&mut self) {
+        let now = Utc::now();
+        let duration = self.current_time - Utc::now();
+        if duration.num_seconds().abs() >= 1 {
+            self.current_time = now;
+
+            // this isn't working. I need to revisit the ECS and
+            // get mutable borrows of components working. Might just
+            // throw away the ECS at this point or grab a 3rd party one...
+            // let moon = self.world.get_component(self.moon_entity);
+            // MoonSystem::update_position()
+        }
+
         CameraSystem::update_camera(
             &mut self.camera_component.camera_controller,
             &mut self.camera_component.camera,

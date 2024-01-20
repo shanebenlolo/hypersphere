@@ -25,7 +25,7 @@ impl BillboardSystem {
         let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation));
         let billboard_matrix_bind_group_layout =
             MeshSystem::create_model_matrix_bind_group_layout(&device);
-        let billboard_matrix_bind_group = MeshSystem::create_mode_matrix_bind_group(
+        let billboard_matrix_bind_group = MeshSystem::create_model_matrix_bind_group(
             &device,
             &billboard_matrix_bind_group_layout,
             billboard_matrix.clone(),
