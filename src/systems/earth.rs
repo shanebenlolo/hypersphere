@@ -1,4 +1,5 @@
 use cgmath::SquareMatrix;
+use wgpu::util::DeviceExt;
 
 use crate::{
     components::{
@@ -8,9 +9,7 @@ use crate::{
     matrix4_to_array, WGS84_A,
 };
 
-use super::{
-    material::MaterialSystem, mesh::MeshSystem, render_pipelines::EarthRenderPipelineSystem,
-};
+use super::{material::MaterialSystem, mesh::MeshSystem, pipelines::EarthRenderPipelineSystem};
 
 pub struct EarthSystem {}
 
@@ -41,10 +40,15 @@ impl EarthSystem {
         let earth_matrix = matrix4_to_array(cgmath::Matrix4::identity());
         let earth_matrix_bind_group_layout =
             MeshSystem::create_model_matrix_bind_group_layout(device);
+        let earth_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh Buffer"),
+            contents: bytemuck::cast_slice(&[earth_matrix]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let earth_matrix_bind_group = MeshSystem::create_model_matrix_bind_group(
             &device,
             &earth_matrix_bind_group_layout,
-            earth_matrix.clone(),
+            &earth_buffer,
         );
 
         // you need to fix this to work with both WGS84_A and WGS84_B
@@ -59,6 +63,7 @@ impl EarthSystem {
             num_indices: earth_indices_vec.len() as u32,
             model_matrix_bind_group_layout: earth_matrix_bind_group_layout,
             model_matrix_bind_group: earth_matrix_bind_group,
+            model_matrix_buffer: earth_buffer,
             model_matrix: earth_matrix,
         }
     }

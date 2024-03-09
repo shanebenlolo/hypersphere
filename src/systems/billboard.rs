@@ -1,3 +1,5 @@
+use wgpu::util::DeviceExt;
+
 use crate::{
     components::{
         camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
@@ -6,9 +8,7 @@ use crate::{
     matrix4_to_array,
 };
 
-use super::{
-    material::MaterialSystem, mesh::MeshSystem, render_pipelines::BillboardRenderPipelineSystem,
-};
+use super::{material::MaterialSystem, mesh::MeshSystem, pipelines::BillboardRenderPipelineSystem};
 
 pub struct BillboardSystem {}
 
@@ -25,10 +25,15 @@ impl BillboardSystem {
         let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation));
         let billboard_matrix_bind_group_layout =
             MeshSystem::create_model_matrix_bind_group_layout(&device);
+        let billboard_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh Buffer"),
+            contents: bytemuck::cast_slice(&[billboard_matrix]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let billboard_matrix_bind_group = MeshSystem::create_model_matrix_bind_group(
             &device,
             &billboard_matrix_bind_group_layout,
-            billboard_matrix.clone(),
+            &billboard_buffer,
         );
         let (billboard_vertices_vec, billboard_indices_vec) =
             MeshSystem::generate_square_mesh(size);
@@ -45,6 +50,7 @@ impl BillboardSystem {
             num_indices: billboard_indices_vec.len() as u32,
             model_matrix_bind_group_layout: billboard_matrix_bind_group_layout,
             model_matrix_bind_group: billboard_matrix_bind_group,
+            model_matrix_buffer: billboard_buffer,
             model_matrix: billboard_matrix,
         }
     }

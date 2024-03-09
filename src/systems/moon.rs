@@ -1,16 +1,16 @@
+use bevy_ecs::world::Mut;
 use cgmath::SquareMatrix;
+use wgpu::util::DeviceExt;
 
 use crate::{
     components::{
         camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
         render_pipelines::RenderPipelineComponent,
     },
-    matrix4_to_array, WGS84_A,
+    matrix4_to_array, MOON_APPROX,
 };
 
-use super::{
-    material::MaterialSystem, mesh::MeshSystem, render_pipelines::EarthRenderPipelineSystem,
-};
+use super::{material::MaterialSystem, mesh::MeshSystem, pipelines::EarthRenderPipelineSystem};
 
 pub struct MoonSystem {}
 
@@ -37,24 +37,24 @@ impl MoonSystem {
         )
     }
 
-    fn generate_mesh(device: &wgpu::Device) -> MeshComponent {
-        let moon_matrix: [[f32; 4]; 4] = cgmath::Matrix4::from_translation(cgmath::Vector3::new(
-            -191682.385992,
-            -283043.217265,
-            -109239.166930,
-        ))
-        .into();
+    pub fn generate_mesh(device: &wgpu::Device) -> MeshComponent {
+        let moon_matrix = matrix4_to_array(cgmath::Matrix4::identity());
 
         let moon_matrix_bind_group_layout =
             MeshSystem::create_model_matrix_bind_group_layout(device);
+        let moon_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh Buffer"),
+            contents: bytemuck::cast_slice(&[moon_matrix]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let moon_matrix_bind_group = MeshSystem::create_model_matrix_bind_group(
             &device,
             &moon_matrix_bind_group_layout,
-            moon_matrix.clone(),
+            &moon_buffer,
         );
 
         // you need to fix this to work with both WGS84_A and WGS84_B
-        let (moon_vertices_vec, moon_indices_vec) = MeshSystem::generate_sphere_mesh(WGS84_A);
+        let (moon_vertices_vec, moon_indices_vec) = MeshSystem::generate_sphere_mesh(MOON_APPROX);
 
         MeshComponent {
             vertex_buffer: MeshSystem::create_vertex_buffer(&device, &moon_vertices_vec.as_slice()),
@@ -62,6 +62,7 @@ impl MoonSystem {
             num_indices: moon_indices_vec.len() as u32,
             model_matrix_bind_group_layout: moon_matrix_bind_group_layout,
             model_matrix_bind_group: moon_matrix_bind_group,
+            model_matrix_buffer: moon_buffer,
             model_matrix: moon_matrix,
         }
     }
@@ -111,7 +112,21 @@ impl MoonSystem {
         }
     }
 
-    pub fn update_position(moon_mesh: &MeshComponent) -> [[f32; 4]; 4] {
-        todo!()
+    // this should go in translation system
+    pub fn update_position(
+        queue: &wgpu::Queue,
+        moon_mesh: &Mut<'_, MeshComponent>,
+        xyz: (f64, f64, f64),
+    ) {
+        let new_moon_matrix: [[f32; 4]; 4] = cgmath::Matrix4::from_translation(
+            cgmath::Vector3::new(0.0 as f32, 0.0, xyz.2 as f32 / 100.0),
+        )
+        .into();
+
+        queue.write_buffer(
+            &moon_mesh.model_matrix_buffer,
+            0,
+            bytemuck::cast_slice(&[new_moon_matrix]),
+        );
     }
 }

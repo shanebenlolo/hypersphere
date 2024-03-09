@@ -1,5 +1,5 @@
 use crate::components::camera::CameraComponent;
-use cgmath::{InnerSpace, SquareMatrix, Vector3};
+use cgmath::{InnerSpace, SquareMatrix};
 
 pub struct WindowSystem {}
 

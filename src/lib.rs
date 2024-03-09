@@ -1,13 +1,11 @@
 mod components;
 mod systems;
-mod world;
 
 use components::{
     camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
     render_pipelines::RenderPipelineComponent,
 };
 use systems::{billboard::BillboardSystem, camera::CameraSystem, window::WindowSystem};
-use tracing_subscriber::fmt::time::UtcTime;
 use wgpu::Surface;
 use winit::{
     dpi::PhysicalPosition,
@@ -21,19 +19,17 @@ use anise::{
     prelude::*,
 };
 
+use bevy_ecs::{entity::Entity, world::World};
+use chrono::{DateTime, Duration, Utc};
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{window, KeyboardEvent};
-use world::World;
 
-use crate::{
-    components::{earth::EarthComponent, moon::MoonComponent},
-    systems::{earth::EarthSystem, moon::MoonSystem},
-};
+use crate::systems::{earth::EarthSystem, moon::MoonSystem};
 
-use chrono::{DateTime, Local, Utc};
-
+pub const MOON_APPROX: f32 = 1_737.4; // kilometers
 pub const WGS84_A: f32 = 6_378.0; // Semi-major axis (equatorial radius) in kilometers
 pub const WGS84_B: f32 = 6_357.0; // Semi-minor axis (polar radius) in kilometers
 
@@ -55,19 +51,23 @@ struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    _depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
+    screen_coords: Option<PhysicalPosition<f64>>,
+
+    // geospatial
+    almanac: Almanac,
+    earth_radius: f32,
+    current_time: DateTime<Utc>,
 
     // scene
     world: World,
-    camera_component: CameraComponent,
-    depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
-    screen_coords: Option<PhysicalPosition<f64>>,
+    _earth_entity: Entity,
+    moon_entity: Entity,
+    camera_entity: Entity,
 
-    earth_radius: f32,
-    earth_entity: usize,
-    moon_entity: usize,
-
-    current_time: DateTime<Utc>,
+    count: i32,
 }
+
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
 impl State {
     async fn new(
@@ -77,8 +77,6 @@ impl State {
         config: wgpu::SurfaceConfiguration,
         window_size: winit::dpi::PhysicalSize<u32>,
     ) -> Self {
-        let mut world = World::new();
-
         // CAMERA
         let (
             camera,
@@ -136,34 +134,33 @@ impl State {
 
         let (earth_mesh_component, earth_material_component, earth_render_pipeline_component) =
             EarthSystem::new(&device, &queue, config.format.clone(), &camera_component);
-        let earth_component = EarthComponent {
-            mesh_component: earth_mesh_component,
-            material_component: earth_material_component,
-            render_pipeline_component: earth_render_pipeline_component,
-        };
-        let earth_entity = world.new_entity();
-        world.add_component_to_entity(earth_entity, earth_component.mesh_component);
-        world.add_component_to_entity(earth_entity, earth_component.material_component);
-        world.add_component_to_entity(earth_entity, earth_component.render_pipeline_component);
 
         let (moon_mesh_component, moon_material_component, moon_render_pipeline_component) =
             MoonSystem::new(&device, &queue, config.format.clone(), &camera_component);
-        let moon_component = MoonComponent {
-            mesh_component: moon_mesh_component,
-            material_component: moon_material_component,
-            render_pipeline_component: moon_render_pipeline_component,
-        };
-        let moon_entity = world.new_entity();
-        world.add_component_to_entity(moon_entity, moon_component.mesh_component);
-        world.add_component_to_entity(moon_entity, moon_component.material_component);
-        world.add_component_to_entity(moon_entity, moon_component.render_pipeline_component);
+
+        let mut world = World::new();
+        let earth_entity = world
+            .spawn((
+                earth_mesh_component,
+                earth_material_component,
+                earth_render_pipeline_component,
+            ))
+            .id();
+        let moon_entity = world
+            .spawn((
+                moon_mesh_component,
+                moon_material_component,
+                moon_render_pipeline_component,
+            ))
+            .id();
+        let camera_entity = world.spawn(camera_component).id();
 
         // Test run of anise, will be moving out in next couple of commits
         let spk = SPK::load("./data/de440s.bsp").unwrap();
-        let ctx = Almanac::from_spk(spk).unwrap();
+        let almanac = Almanac::from_spk(spk).unwrap();
         // Define an Epoch in the dynamical barycentric time scale
         let epoch = Epoch::from_str("2020-11-15 12:34:56.789 TDB").unwrap();
-        let state = ctx
+        let state = almanac
             .translate_from_to(
                 frames::LUNA_J2000,  // Target
                 frames::EARTH_J2000, // Observer
@@ -174,19 +171,30 @@ impl State {
         println!("{state}");
 
         Self {
+            // wgpu-specific
             surface,
             device,
             queue,
             config,
             window_size,
-            camera_component,
-            world,
+            _depth_texture: depth_texture,
+
+            // screen
             screen_coords: None,
+
+            // math
+            almanac,
             earth_radius: WGS84_A,
-            depth_texture,
             current_time: Utc::now(),
-            earth_entity,
+
+            // visualization
+            world,
+            _earth_entity: earth_entity,
             moon_entity,
+            camera_entity,
+
+            // debugging
+            count: 0,
         }
     }
 
@@ -248,13 +256,18 @@ impl State {
                 let position_y = self.screen_coords.unwrap().y as f32;
 
                 if button == &MouseButton::Left && state == &ElementState::Pressed {
+                    let camera_component = self
+                        .world
+                        .get::<CameraComponent>(self.camera_entity)
+                        .unwrap();
+
                     if let Some((lat, lon)) = WindowSystem::handle_left_click(
                         screen_width,
                         screen_height,
                         position_x,
                         position_y,
                         self.earth_radius,
-                        &self.camera_component,
+                        camera_component,
                     ) {
                         let size = 500.0;
                         let billboard_mesh = BillboardSystem::create_billboard_mesh(
@@ -268,19 +281,17 @@ impl State {
                             BillboardSystem::create_billboard_material(&self.device, &self.queue);
                         let billboard_render_pipeline = BillboardSystem::create_render_pipeline(
                             &self.device,
-                            &self.camera_component,
+                            camera_component,
                             &billboard_material,
                             &billboard_mesh,
                             &self.config.format,
                         );
 
-                        let billboard_entity = self.world.new_entity();
-                        self.world
-                            .add_component_to_entity(billboard_entity, billboard_mesh);
-                        self.world
-                            .add_component_to_entity(billboard_entity, billboard_render_pipeline);
-                        self.world
-                            .add_component_to_entity(billboard_entity, billboard_material);
+                        let _billboard_entity = self.world.spawn((
+                            billboard_mesh,
+                            billboard_render_pipeline,
+                            billboard_material,
+                        ));
                     }
                 }
             }
@@ -290,49 +301,68 @@ impl State {
             _ => {}
         }
 
-        CameraSystem::process_key_events(&mut self.camera_component.camera_controller, event)
+        if let Some(mut camera_component) =
+            self.world.get_mut::<CameraComponent>(self.camera_entity)
+        {
+            CameraSystem::process_key_events(&mut camera_component.camera_controller, event);
+            return true;
+        } else {
+            return false;
+        }
     }
 
     fn update(&mut self) {
         let now = Utc::now();
-        let duration = self.current_time - Utc::now();
-        if duration.num_seconds().abs() >= 1 {
-            self.current_time = now;
+        // Assuming each 'epoch' is 30 minutes
+        let epoch_duration = Duration::minutes((self.count) as i64);
 
-            // this isn't working. I need to revisit the ECS and
-            // get mutable borrows of components working. Might just
-            // throw away the ECS at this point or grab a 3rd party one...
-            // let moon = self.world.get_component(self.moon_entity);
-            // MoonSystem::update_position()
-        }
+        // incremenet simulation time
+        let new_time = now + epoch_duration;
+        self.current_time = new_time;
+        let formatted_time = new_time.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string();
+        let epoch = Epoch::from_str(&formatted_time).unwrap();
 
-        CameraSystem::update_camera(
-            &mut self.camera_component.camera_controller,
-            &mut self.camera_component.camera,
+        let state = self
+            .almanac
+            .translate_from_to(
+                frames::LUNA_J2000,  // Target
+                frames::EARTH_J2000, // Observer
+                epoch,
+                Aberration::None,
+            )
+            .unwrap();
+        let moon_position_velocity = state.to_cartesian_pos_vel();
+
+        let moon_mesh = self
+            .world
+            .get_mut::<MeshComponent>(self.moon_entity)
+            .unwrap();
+
+        MoonSystem::update_position(
+            &self.queue,
+            &moon_mesh,
+            (
+                moon_position_velocity[0],
+                moon_position_velocity[1],
+                moon_position_velocity[2],
+            ),
         );
-        self.camera_component
-            .camera_uniform
-            .update_view_proj(&self.camera_component.camera);
-        self.queue.write_buffer(
-            &self.camera_component.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[self.camera_component.camera_uniform]),
-        );
+
+        self.count += 500;
+
+        let camera_component = self
+            .world
+            .get_mut::<CameraComponent>(self.camera_entity)
+            .unwrap();
+        CameraSystem::update_camera(&self.queue, camera_component);
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // get the surface to provide a new SurfaceTexture that we will render to.
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-
-        // We need to do this because we want to control how the render code
-        //  interacts with the texture.
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Most modern graphics frameworks expect commands to be stored
-        // in a command buffer before being sent to the gpu.
-        // The encoder builds a command buffer that we can then send to the gpu.
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -369,33 +399,24 @@ impl State {
             }),
         });
 
-        render_pass.set_bind_group(0, &self.camera_component.camera_bind_group, &[]);
+        let mut objects_query =
+            self.world
+                .query::<(&RenderPipelineComponent, &MeshComponent, &MaterialComponent)>();
 
-        let entity_ids_with_mesh_and_material = self
+        let camera_component = self
             .world
-            .query_entities_with_material_and_mesh::<MeshComponent, MaterialComponent>();
+            .get::<CameraComponent>(self.camera_entity)
+            .unwrap();
+        render_pass.set_bind_group(0, &camera_component.camera_bind_group, &[]);
 
-        for entity_id in entity_ids_with_mesh_and_material {
-            // Retrieve components for the current entity
-            let render_pipeline = self
-                .world
-                .get_component::<RenderPipelineComponent>(entity_id);
-            let mesh = self.world.get_component::<MeshComponent>(entity_id);
-            let material = self.world.get_component::<MaterialComponent>(entity_id);
+        for (render_pipeline, mesh, material) in objects_query.iter(&self.world) {
+            render_pass.set_pipeline(&render_pipeline.render_pipeline);
+            render_pass.set_bind_group(1, &material.bind_group, &[]);
+            render_pass.set_bind_group(2, &mesh.model_matrix_bind_group, &[]);
 
-            // Check if all components are available
-            if let (Some(render_pipeline), Some(mesh), Some(material)) =
-                (render_pipeline, mesh, material)
-            {
-                render_pass.set_pipeline(&render_pipeline.render_pipeline);
-                render_pass.set_bind_group(1, &material.bind_group, &[]);
-                render_pass.set_bind_group(2, &mesh.model_matrix_bind_group, &[]);
-
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
-            }
+            render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
         }
 
         drop(render_pass);
@@ -403,7 +424,6 @@ impl State {
         // submit will accept anything that implements IntoIter
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-
         Ok(())
     }
 }
@@ -530,7 +550,7 @@ pub async fn run() {
 }
 
 // Define a helper function `print`
-fn print(message: &str) {
+fn _print(message: &str) {
     #[cfg(target_arch = "wasm32")]
     {
         // Use `console::log_1` for WebAssembly target

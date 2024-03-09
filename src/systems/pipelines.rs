@@ -84,15 +84,9 @@ impl EarthRenderPipelineSystem {
     }
 }
 
-pub struct BillboardRenderPipelineSystem<'a> {
-    device: &'a wgpu::Device,
-}
+pub struct BillboardRenderPipelineSystem {}
 
-impl<'a> BillboardRenderPipelineSystem<'a> {
-    pub fn new(device: &'a wgpu::Device) -> BillboardRenderPipelineSystem {
-        Self { device }
-    }
-
+impl BillboardRenderPipelineSystem {
     pub fn layout_desc(
         device: &wgpu::Device,
         bind_group_layouts: &[&wgpu::BindGroupLayout],

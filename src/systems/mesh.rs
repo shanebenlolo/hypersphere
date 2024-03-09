@@ -26,14 +26,8 @@ impl MeshSystem {
     pub fn create_model_matrix_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
-        model_matrix: [[f32; 4]; 4],
+        buffer: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Mesh Buffer"),
-            contents: bytemuck::cast_slice(&[model_matrix]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout,
             entries: &[wgpu::BindGroupEntry {
@@ -147,10 +141,6 @@ impl MeshSystem {
         indices.push(3);
 
         (vertices, indices)
-    }
-
-    pub fn degrees_to_radians(degrees: f32) -> f32 {
-        degrees * (std::f32::consts::PI / 180.0)
     }
 
     pub fn lat_lon_to_cartesian(lat: f32, lon: f32, radius: f32) -> (f32, f32, f32) {

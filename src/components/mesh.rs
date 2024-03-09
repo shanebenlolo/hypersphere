@@ -1,11 +1,18 @@
+use bevy_ecs::component::Component;
+
+#[derive(Component)]
 pub struct MeshComponent {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
     pub model_matrix_bind_group_layout: wgpu::BindGroupLayout,
     pub model_matrix_bind_group: wgpu::BindGroup,
+    pub model_matrix_buffer: wgpu::Buffer,
     pub model_matrix: [[f32; 4]; 4],
 }
+
+unsafe impl Send for MeshComponent {}
+unsafe impl Sync for MeshComponent {}
 
 // Needed to ensure rust compiled our data correctly for the shaders
 // Needed to store the data in a buffer without compiler rearranging
