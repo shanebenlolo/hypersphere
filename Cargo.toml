@@ -49,3 +49,6 @@ web-sys = { version = "0.3", features = [
     "Element",
     "KeyboardEvent"
 ]}
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
