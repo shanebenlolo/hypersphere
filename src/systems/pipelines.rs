@@ -1,4 +1,7 @@
-use crate::components::mesh::{BillboardVertex, Vertex};
+use crate::{
+    components::mesh::{BillboardVertex, Vertex},
+    DEPTH_FORMAT, // used for wasm, don't delete
+};
 
 pub struct EarthRenderPipelineSystem {}
 

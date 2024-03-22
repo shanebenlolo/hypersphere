@@ -23,7 +23,8 @@ cgmath = "0.18.0"
 anise = "^0.1"
 chrono = "0.4.31"
 bevy_ecs = "0.12.1"
-
+js-sys = "0.3"
+futures-channel = "0.3.30"
 
 # Decoding jpegs in WASM isn't very performant.
 # If you want to speed up image loading in general 

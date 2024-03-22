@@ -1,22 +1,24 @@
 mod components;
 mod systems;
 
+// use std::str::Bytes;
+
+use anise::{
+    constants::frames::{self},
+    prelude::*,
+};
 use components::{
     camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
     render_pipelines::RenderPipelineComponent,
 };
 use systems::{billboard::BillboardSystem, camera::CameraSystem, window::WindowSystem};
+
 use wgpu::Surface;
 use winit::{
     dpi::PhysicalPosition,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
-};
-
-use anise::{
-    constants::frames::{self},
-    prelude::*,
 };
 
 use bevy_ecs::{entity::Entity, world::World};
@@ -390,7 +392,7 @@ impl State {
             depth_stencil_attachment: None,
             #[cfg(target_arch = "wasm32")]
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_texture.1,
+                view: &self._depth_texture.1,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
