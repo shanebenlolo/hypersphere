@@ -22,10 +22,10 @@ cp -r ./data ~/hypersphere/data
 
 WINIT_UNIX_BACKEND="x11" cargo watch -x "run"
 
-## to compile for web:
+## to run on web for web:
 
 wasm-pack build --target web
-
+node ./server/server.js
 once compiled, serve your index.html page (I have been using live server)
 
 ## Upcoming features:

@@ -1,0 +1,7 @@
+To run this server, you must first follow the README installation steps at the root of Hypersphere.
+
+IMPORTANT: you must run this server from the root of hypersphere for the time being
+
+```
+node ./server/server.js
+```

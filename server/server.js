@@ -9,7 +9,8 @@ const port = 3000;
 app.use(cors());
 
 // Define the directory where your file is located. Adjust as necessary.
-const publicDirectoryPath = path.join(__dirname, "../data");
+const publicDirectoryPath = path.join(__dirname, "../data"); // Ensure this path correctly points to the 'data' folder
+console.log("Serving static files from:", publicDirectoryPath);
 
 // Serve files in the public directory as static resources
 app.use(express.static(publicDirectoryPath));

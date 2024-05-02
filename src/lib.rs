@@ -25,9 +25,13 @@ use bevy_ecs::{entity::Entity, world::World};
 use chrono::{DateTime, Duration, Utc};
 
 #[cfg(target_arch = "wasm32")]
+use js_sys::Uint8Array;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
-use web_sys::{window, KeyboardEvent};
+use wasm_bindgen_futures::JsFuture;
+#[cfg(target_arch = "wasm32")]
+use web_sys::{window, KeyboardEvent, Request, RequestInit, RequestMode, Response};
 
 use crate::systems::{earth::EarthSystem, moon::MoonSystem};
 
@@ -462,6 +466,32 @@ pub async fn run() {
                 Some(())
             })
             .expect("Couldn't append canvas to div.");
+
+        let mut opts = RequestInit::new();
+        opts.method("GET");
+        opts.mode(RequestMode::Cors);
+
+        let url = format!("http://localhost:3000/de440s.bsp");
+
+        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
+
+        request.headers().set("Accept", "*/*").unwrap();
+
+        let window = web_sys::window().unwrap();
+        let resp_value = JsFuture::from(window.fetch_with_request(&request))
+            .await
+            .unwrap();
+
+        // `resp_value` is a `Response` object.
+        assert!(resp_value.is_instance_of::<Response>());
+        let resp: Response = resp_value.dyn_into().unwrap();
+
+        let buffer: JsValue = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+        // Convert JsValue (ArrayBuffer) into Vec<u8>
+        let uint8_array = Uint8Array::new(&buffer);
+        let byte_vec = uint8_array.to_vec();
+
+        _print(&byte_vec.len().to_string());
     }
 
     let window_size = window.inner_size();
