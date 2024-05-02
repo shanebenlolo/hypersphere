@@ -11,14 +11,7 @@ impl CameraSystem {
         device: &wgpu::Device,
         screen_width: u32,
         screen_height: u32,
-    ) -> (
-        Camera,
-        CameraUniform,
-        wgpu::Buffer,
-        wgpu::BindGroup,
-        wgpu::BindGroupLayout,
-        CameraController,
-    ) {
+    ) -> CameraComponent {
         let camera = Camera {
             // position the camera one unit up and 2 units back
             // +z is out of the screen
@@ -67,14 +60,14 @@ impl CameraSystem {
         );
         let camera_controller = CameraController::new(50000.0);
 
-        (
+        CameraComponent {
             camera,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
             camera_bind_group_layout,
             camera_controller,
-        )
+        }
     }
 
     fn create_uniform_buffer<T: bytemuck::Pod>(device: &wgpu::Device, data: &T) -> wgpu::Buffer {
@@ -143,14 +136,6 @@ impl CameraSystem {
         let forward_mag = forward.magnitude();
         let speed = cam_component.camera_controller.speed.clone();
 
-        let eye = cam_component.camera.eye.clone();
-        let target = cam_component.camera.target.clone();
-        let up = cam_component.camera.up.clone();
-        let aspect = cam_component.camera.aspect.clone();
-        let fovy = cam_component.camera.fovy.clone();
-        let znear = cam_component.camera.znear.clone();
-        let zfar = cam_component.camera.zfar.clone();
-
         // Prevents glitching when camera gets too close to the
         // center of the scene.
         if cam_component.camera_controller.is_forward_pressed
@@ -182,6 +167,14 @@ impl CameraSystem {
             cam_component.camera.eye =
                 cam_component.camera.target + rotation_matrix * relative_position;
         }
+
+        let eye = cam_component.camera.eye;
+        let target = cam_component.camera.target;
+        let up = cam_component.camera.up;
+        let aspect = cam_component.camera.aspect;
+        let fovy = cam_component.camera.fovy;
+        let znear = cam_component.camera.znear;
+        let zfar = cam_component.camera.zfar;
 
         cam_component
             .camera_uniform

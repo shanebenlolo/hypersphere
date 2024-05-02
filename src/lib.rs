@@ -1,16 +1,13 @@
 mod components;
+mod depth_buffer;
 mod systems;
 
-// use std::str::Bytes;
-
-use anise::{
-    constants::frames::{self},
-    prelude::*,
-};
+use anise::prelude::*;
 use components::{
     camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
     render_pipelines::RenderPipelineComponent,
 };
+use depth_buffer::Texture;
 use systems::{billboard::BillboardSystem, camera::CameraSystem, window::WindowSystem};
 
 use wgpu::Surface;
@@ -22,7 +19,6 @@ use winit::{
 };
 
 use bevy_ecs::{entity::Entity, world::World};
-use chrono::{DateTime, Duration, Utc};
 
 #[cfg(target_arch = "wasm32")]
 use js_sys::Uint8Array;
@@ -57,21 +53,18 @@ struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    _depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
+    _depth_texture: Texture,
     screen_coords: Option<PhysicalPosition<f64>>,
 
     // geospatial
     almanac: Almanac,
     earth_radius: f32,
-    current_time: DateTime<Utc>,
 
     // scene
     world: World,
     _earth_entity: Entity,
     moon_entity: Entity,
     camera_entity: Entity,
-
-    count: i32,
 }
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
@@ -83,68 +76,17 @@ impl State {
         config: wgpu::SurfaceConfiguration,
         window_size: winit::dpi::PhysicalSize<u32>,
     ) -> Self {
-        // CAMERA
-        let (
-            camera,
-            camera_uniform,
-            camera_buffer,
-            camera_bind_group,
-            camera_bind_group_layout,
-            camera_controller,
-        ) = CameraSystem::create_camera(&device, config.width, config.height);
-        let camera_component = CameraComponent {
-            camera,
-            camera_uniform,
-            camera_buffer,
-            camera_bind_group,
-            camera_bind_group_layout,
-            camera_controller,
-        };
+        let mut world = World::new();
 
-        // DEPTH TEXTURE (sadly wasm only for now)
-        pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
-        let depth_size = wgpu::Extent3d {
-            // 2.
-            width: config.width,
-            height: config.height,
-            depth_or_array_layers: 1,
-        };
-        let desc = wgpu::TextureDescriptor {
-            label: Some("depth texture"),
-            size: depth_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        };
-        let texture = device.create_texture(&desc);
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            // 4.
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::Always), // 5.
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 100.0,
-            ..Default::default()
-        });
-        let depth_texture = (texture, view, sampler);
-
+        // init components via systems
+        let camera_component = CameraSystem::create_camera(&device, config.width, config.height);
         let (earth_mesh_component, earth_material_component, earth_render_pipeline_component) =
             EarthSystem::new(&device, &queue, config.format.clone(), &camera_component);
-
         let (moon_mesh_component, moon_material_component, moon_render_pipeline_component) =
             MoonSystem::new(&device, &queue, config.format.clone(), &camera_component);
 
-        let mut world = World::new();
+        // init entities
+        let camera_entity = world.spawn(camera_component).id();
         let earth_entity = world
             .spawn((
                 earth_mesh_component,
@@ -159,22 +101,15 @@ impl State {
                 moon_render_pipeline_component,
             ))
             .id();
-        let camera_entity = world.spawn(camera_component).id();
 
-        // Test run of anise, will be moving out in next couple of commits
-        let spk = SPK::load("./data/de440s.bsp").unwrap();
-        let almanac = Almanac::from_spk(spk).unwrap();
-        // Define an Epoch in the dynamical barycentric time scale
-        let epoch = Epoch::from_str("2020-11-15 12:34:56.789 TDB").unwrap();
-        let state = almanac
-            .translate_from_to(
-                frames::LUNA_J2000,  // Target
-                frames::EARTH_J2000, // Observer
-                epoch,
-                Aberration::None,
-            )
-            .unwrap();
-        println!("{state}");
+        // remove this await and store the Future in state
+        // place this into an ECS paradigm and move above
+        let bsp_data = get_bsp_data().await;
+        let almanac = Almanac::from_spk(SPK::parse(bsp_data).unwrap()).unwrap();
+
+        // wasm only
+        let _depth_texture =
+            depth_buffer::Texture::create_depth_texture(&device, &config, "depth texture");
 
         Self {
             // wgpu-specific
@@ -183,7 +118,7 @@ impl State {
             queue,
             config,
             window_size,
-            _depth_texture: depth_texture,
+            _depth_texture,
 
             // screen
             screen_coords: None,
@@ -191,16 +126,12 @@ impl State {
             // math
             almanac,
             earth_radius: WGS84_A,
-            current_time: Utc::now(),
 
             // visualization
             world,
             _earth_entity: earth_entity,
             moon_entity,
             camera_entity,
-
-            // debugging
-            count: 0,
         }
     }
 
@@ -281,7 +212,7 @@ impl State {
                             size,
                             lat,
                             lon,
-                            self.earth_radius,
+                            self.earth_radius + 10.0,
                         );
                         let billboard_material =
                             BillboardSystem::create_billboard_material(&self.device, &self.queue);
@@ -318,49 +249,21 @@ impl State {
     }
 
     fn update(&mut self) {
-        let now = Utc::now();
-        // Assuming each 'epoch' is 30 minutes
-        let epoch_duration = Duration::minutes((self.count) as i64);
-
-        // incremenet simulation time
-        let new_time = now + epoch_duration;
-        self.current_time = new_time;
-        let formatted_time = new_time.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string();
-        let epoch = Epoch::from_str(&formatted_time).unwrap();
-
-        let state = self
-            .almanac
-            .translate_from_to(
-                frames::LUNA_J2000,  // Target
-                frames::EARTH_J2000, // Observer
-                epoch,
-                Aberration::None,
-            )
-            .unwrap();
-        let moon_position_velocity = state.to_cartesian_pos_vel();
-
-        let moon_mesh = self
-            .world
-            .get_mut::<MeshComponent>(self.moon_entity)
-            .unwrap();
-
         MoonSystem::update_position(
             &self.queue,
-            &moon_mesh,
-            (
-                moon_position_velocity[0],
-                moon_position_velocity[1],
-                moon_position_velocity[2],
-            ),
+            &self
+                .world
+                .get_mut::<MeshComponent>(self.moon_entity)
+                .unwrap(),
+            &self.almanac,
         );
 
-        self.count += 500;
-
-        let camera_component = self
-            .world
-            .get_mut::<CameraComponent>(self.camera_entity)
-            .unwrap();
-        CameraSystem::update_camera(&self.queue, camera_component);
+        CameraSystem::update_camera(
+            &self.queue,
+            self.world
+                .get_mut::<CameraComponent>(self.camera_entity)
+                .unwrap(),
+        );
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -396,7 +299,7 @@ impl State {
             depth_stencil_attachment: None,
             #[cfg(target_arch = "wasm32")]
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self._depth_texture.1,
+                view: &self._depth_texture.view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
@@ -466,32 +369,6 @@ pub async fn run() {
                 Some(())
             })
             .expect("Couldn't append canvas to div.");
-
-        let mut opts = RequestInit::new();
-        opts.method("GET");
-        opts.mode(RequestMode::Cors);
-
-        let url = format!("http://localhost:3000/de440s.bsp");
-
-        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
-
-        request.headers().set("Accept", "*/*").unwrap();
-
-        let window = web_sys::window().unwrap();
-        let resp_value = JsFuture::from(window.fetch_with_request(&request))
-            .await
-            .unwrap();
-
-        // `resp_value` is a `Response` object.
-        assert!(resp_value.is_instance_of::<Response>());
-        let resp: Response = resp_value.dyn_into().unwrap();
-
-        let buffer: JsValue = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
-        // Convert JsValue (ArrayBuffer) into Vec<u8>
-        let uint8_array = Uint8Array::new(&buffer);
-        let byte_vec = uint8_array.to_vec();
-
-        _print(&byte_vec.len().to_string());
     }
 
     let window_size = window.inner_size();
@@ -579,6 +456,51 @@ pub async fn run() {
 
         _ => {}
     });
+}
+
+async fn get_bsp_data() -> Vec<u8> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut opts = RequestInit::new();
+        opts.method("GET");
+        opts.mode(RequestMode::Cors);
+
+        let url = format!("http://localhost:3000/de440s.bsp");
+
+        let request = Request::new_with_str_and_init(&url, &opts).unwrap();
+
+        request.headers().set("Accept", "*/*").unwrap();
+
+        let window = web_sys::window().unwrap();
+        let resp_value = JsFuture::from(window.fetch_with_request(&request))
+            .await
+            .unwrap();
+
+        // `resp_value` is a `Response` object.
+        assert!(resp_value.is_instance_of::<Response>());
+        let resp: Response = resp_value.dyn_into().unwrap();
+
+        let buffer: JsValue = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+        // Convert JsValue (ArrayBuffer) into Vec<u8>
+        let uint8_array: Uint8Array = Uint8Array::new(&buffer);
+
+        return uint8_array.to_vec();
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // URL of the web server you want to fetch data from
+        let url = "http://localhost:3000/de440s.bsp";
+
+        // Send a GET request to the specified URL
+        let response = reqwest::get(url).await.unwrap();
+
+        // Retrieve the response body as a vector of bytes
+        let bytes = response.bytes().await.unwrap();
+
+        // Return the vector of bytes
+        return bytes.to_vec();
+    }
 }
 
 // Define a helper function `print`

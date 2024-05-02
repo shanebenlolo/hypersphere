@@ -1,6 +1,7 @@
 use hypersphere::run;
 use pollster;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     pollster::block_on(run());
 }

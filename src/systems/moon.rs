@@ -1,5 +1,7 @@
+use anise::{almanac::Almanac, astro::Aberration, constants::frames, prelude::*};
 use bevy_ecs::world::Mut;
 use cgmath::SquareMatrix;
+use chrono::Utc;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -112,16 +114,34 @@ impl MoonSystem {
         }
     }
 
-    // this should go in translation system
+    // orbit moon around earth
     pub fn update_position(
         queue: &wgpu::Queue,
         moon_mesh: &Mut<'_, MeshComponent>,
-        xyz: (f64, f64, f64),
+        almanac: &Almanac,
     ) {
-        let new_moon_matrix: [[f32; 4]; 4] = cgmath::Matrix4::from_translation(
-            cgmath::Vector3::new(0.0 as f32, 0.0, xyz.2 as f32 / 100.0),
-        )
-        .into();
+        let now = Utc::now();
+        let new_time = now;
+        let formatted_time = new_time.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string();
+        let epoch = Epoch::from_str(&formatted_time).unwrap();
+
+        let state = almanac
+            .translate_from_to(
+                frames::LUNA_J2000,  // Target
+                frames::EARTH_J2000, // Observer
+                epoch,
+                Aberration::None,
+            )
+            .unwrap();
+        let moon_position_velocity = state.to_cartesian_pos_vel();
+
+        let new_moon_matrix: [[f32; 4]; 4] =
+            cgmath::Matrix4::from_translation(cgmath::Vector3::new(
+                moon_position_velocity[0] as f32,
+                moon_position_velocity[1] as f32,
+                moon_position_velocity[2] as f32,
+            ))
+            .into();
 
         queue.write_buffer(
             &moon_mesh.model_matrix_buffer,
