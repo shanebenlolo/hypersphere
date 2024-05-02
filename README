@@ -1,4 +1,4 @@
-A high-performance web-based geospatial visualization tool with an emphasis LEO satellites and lunar missions. Written in Rust to target WebGPU, with WebGL2 backwards compatibility.
+A high-performance web-based geospatial visualization tool. Written in Rust to target WebGPU, with WebGL2 backwards compatibility. Currently under development, highly unstable.
 
 ## set up ANISE for geospatial library:
 
@@ -30,11 +30,11 @@ once compiled, serve your index.html page (I have been using live server)
 
 ## Upcoming features:
 
+- host bsp data from server not from hardcoded file (COMPLETE)
+- add ability to switch view from earth to moon and also switch the target / observer for accurate relative location (IN PROGRESS)
+- add moon entity and map LRO images to surface, maybe a selenographic coordinate system (IN PROGRESS),
 - Proper World Geodetic System implementation of globe
 - model loading
 - line / arc drawing
-- add moon entity and map LRO images to surface (maybe a selenographic coordinate system?),
-- add ability to switch view from earth to moon and also switch the target / observer for accurate relative location
 - add time system for simulations including earth rotation and moon rotation
-- host bsp data from server not from hardcoded file (or a better option will probably be allowing uploads of bsp data...)
 - add subtle depth map to earth and atmosphere

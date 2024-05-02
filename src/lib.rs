@@ -216,6 +216,10 @@ impl State {
                         );
                         let billboard_material =
                             BillboardSystem::create_billboard_material(&self.device, &self.queue);
+
+                        // should 100% not be making a render pipeline for each billboard...
+                        // probably should be reusing the material too. I don't think we can
+                        // reuse the mesh due to coordinate differences.
                         let billboard_render_pipeline = BillboardSystem::create_render_pipeline(
                             &self.device,
                             camera_component,
