@@ -65,6 +65,9 @@ struct State {
     _earth_entity: Entity,
     moon_entity: Entity,
     camera_entity: Entity,
+
+    // for debugging orbit, temporary.
+    count: u64,
 }
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
@@ -132,6 +135,8 @@ impl State {
             _earth_entity: earth_entity,
             moon_entity,
             camera_entity,
+
+            count: 0,
         }
     }
 
@@ -212,7 +217,7 @@ impl State {
                             size,
                             lat,
                             lon,
-                            self.earth_radius + 10.0,
+                            self.earth_radius,
                         );
                         let billboard_material =
                             BillboardSystem::create_billboard_material(&self.device, &self.queue);
@@ -253,6 +258,7 @@ impl State {
     }
 
     fn update(&mut self) {
+        self.count += 5000;
         MoonSystem::update_position(
             &self.queue,
             &self
@@ -260,6 +266,7 @@ impl State {
                 .get_mut::<MeshComponent>(self.moon_entity)
                 .unwrap(),
             &self.almanac,
+            self.count,
         );
 
         CameraSystem::update_camera(
@@ -298,10 +305,10 @@ impl State {
                 },
             })],
 
-            // depth stencil only working on wasm :(
-            #[cfg(not(target_arch = "wasm32"))]
+            // depth stencil not working on WSL + Nvidia
+            #[cfg(target_os = "linux")]
             depth_stencil_attachment: None,
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(not(target_os = "linux"))]
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self._depth_texture.view,
                 depth_ops: Some(wgpu::Operations {

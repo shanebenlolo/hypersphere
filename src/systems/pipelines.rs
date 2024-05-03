@@ -62,10 +62,10 @@ impl EarthRenderPipelineSystem {
                 conservative: false,
             },
 
-            // depth stencil only working on wasm :(
-            #[cfg(not(target_arch = "wasm32"))]
+            // depth stencil not working on WSL + Nvidia
+            #[cfg(target_os = "linux")]
             depth_stencil: None,
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(not(target_os = "linux"))]
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,
@@ -147,10 +147,10 @@ impl BillboardRenderPipelineSystem {
                 conservative: false,
             },
 
-            // depth stencil only working on wasm :(
-            #[cfg(not(target_arch = "wasm32"))]
+            // depth stencil not working on WSL + Nvidia
+            #[cfg(target_os = "linux")]
             depth_stencil: None,
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(not(target_os = "linux"))]
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,

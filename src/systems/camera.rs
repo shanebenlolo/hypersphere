@@ -15,7 +15,7 @@ impl CameraSystem {
         let camera = Camera {
             // position the camera one unit up and 2 units back
             // +z is out of the screen
-            eye: (0.0, 0.0, 2_000_000.0).into(),
+            eye: (0.0, 0.0, 15_000.0).into(),
             // have it look at the origin
             target: (0.0, 0.0, 0.0).into(),
             // which way is "up"
@@ -58,7 +58,7 @@ impl CameraSystem {
             &camera_buffer,
             &camera_bind_group_layout,
         );
-        let camera_controller = CameraController::new(50000.0);
+        let camera_controller = CameraController::new(1.0);
 
         CameraComponent {
             camera,
@@ -150,7 +150,7 @@ impl CameraSystem {
         if cam_component.camera_controller.is_right_pressed {
             // Rotate the camera around the target point to the right
             let rotation_angle =
-                cgmath::Rad(cgmath::Deg(cam_component.camera_controller.speed / 5000000.0).0); // Convert to radians
+                cgmath::Rad(cgmath::Deg(cam_component.camera_controller.speed / 1_000.0).0); // Convert to radians
             let rotation_matrix =
                 cgmath::Matrix3::from_axis_angle(cam_component.camera.up, -rotation_angle);
             let relative_position = cam_component.camera.eye - cam_component.camera.target;
@@ -160,7 +160,7 @@ impl CameraSystem {
         if cam_component.camera_controller.is_left_pressed {
             // Rotate the camera around the target point to the left
             let rotation_angle =
-                cgmath::Rad(cgmath::Deg(cam_component.camera_controller.speed / 5000000.0).0); // Convert to radians
+                cgmath::Rad(cgmath::Deg(cam_component.camera_controller.speed / 1_000.0).0); // Convert to radians
             let rotation_matrix =
                 cgmath::Matrix3::from_axis_angle(cam_component.camera.up, rotation_angle);
             let relative_position = cam_component.camera.eye - cam_component.camera.target;

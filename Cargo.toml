@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 
 [dependencies]
+rand = "0.8"
 cfg-if = "1"
 log = "0.4.17"
 tracing = "0.1.37"
@@ -37,7 +38,13 @@ version = "0.24"
 default-features = false
 features = ["png", "jpeg"]
 
+# It'd be preferable to do 
+# [target.'cfg(not(target_arch = "wasm32"))'.depencies]
+# but that doesn't seem to be working. Look into this in the future.
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+reqwest = "0.11"
+tokio = { version = "1", features = ["full"] }
+[target.'cfg(target_os = "windows")'.dependencies]
 reqwest = "0.11"
 tokio = { version = "1", features = ["full"] }
 

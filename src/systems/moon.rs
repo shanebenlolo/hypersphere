@@ -1,7 +1,7 @@
 use anise::{almanac::Almanac, astro::Aberration, constants::frames, prelude::*};
 use bevy_ecs::world::Mut;
 use cgmath::SquareMatrix;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -117,12 +117,13 @@ impl MoonSystem {
     // orbit moon around earth
     pub fn update_position(
         queue: &wgpu::Queue,
-        moon_mesh: &Mut<'_, MeshComponent>,
+        moon_mesh: &Mut<MeshComponent>,
         almanac: &Almanac,
+        count: u64,
     ) {
         let now = Utc::now();
-        let new_time = now;
-        let formatted_time = new_time.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string();
+        let new_time = now + Duration::seconds(count as i64);
+        let formatted_time = now.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string();
         let epoch = Epoch::from_str(&formatted_time).unwrap();
 
         let state = almanac
@@ -135,13 +136,36 @@ impl MoonSystem {
             .unwrap();
         let moon_position_velocity = state.to_cartesian_pos_vel();
 
+        // Define the axial tilt in degrees
+        let axial_tilt_degrees = -23.5f32; // Negative because we're tilting the moon's orbit
+        let axial_tilt_radians = axial_tilt_degrees.to_radians();
+
+        // Create a rotation matrix for the Earth's axial tilt
+        let axial_tilt_matrix = cgmath::Matrix4::from_angle_x(cgmath::Deg(axial_tilt_radians));
+
+        // Apply axial tilt transformation and then translation
+        let position = cgmath::Vector3::new(
+            moon_position_velocity[1] as f32,
+            moon_position_velocity[2] as f32,
+            moon_position_velocity[0] as f32,
+        );
+
+        // Convert Vector3 to Vector4 by adding a 'w' component of 1.0 for proper transformation
+        let position_vec4 = cgmath::Vector4::new(position.x, position.y, position.z, 1.0);
+
+        // Rotate the position vector by the axial tilt
+        let tilted_position_vec4 = axial_tilt_matrix * position_vec4;
+
+        // Convert back to Vector3 for translation (ignore the 'w' component)
+        let tilted_position = cgmath::Vector3::new(
+            tilted_position_vec4.x,
+            tilted_position_vec4.y,
+            tilted_position_vec4.z,
+        );
+
+        // Create the new model matrix with the tilted position
         let new_moon_matrix: [[f32; 4]; 4] =
-            cgmath::Matrix4::from_translation(cgmath::Vector3::new(
-                moon_position_velocity[0] as f32,
-                moon_position_velocity[1] as f32,
-                moon_position_velocity[2] as f32,
-            ))
-            .into();
+            cgmath::Matrix4::from_translation(tilted_position).into();
 
         queue.write_buffer(
             &moon_mesh.model_matrix_buffer,

@@ -1,5 +1,3 @@
-use wgpu::util::DeviceExt;
-
 use crate::{
     components::{
         camera::CameraComponent, material::MaterialComponent, mesh::MeshComponent,
@@ -7,6 +5,8 @@ use crate::{
     },
     matrix4_to_array,
 };
+use cgmath::{InnerSpace, Matrix4, Vector3};
+use wgpu::util::DeviceExt;
 
 use super::{material::MaterialSystem, mesh::MeshSystem, pipelines::BillboardRenderPipelineSystem};
 
@@ -20,9 +20,21 @@ impl BillboardSystem {
         lon: f32,
         globe_radius: f32,
     ) -> MeshComponent {
+        // Convert latitude and longitude to Cartesian coordinates at globe surface
         let (x, y, z) = MeshSystem::lat_lon_to_cartesian(lat, lon, globe_radius);
-        let translation = cgmath::Vector3::new(x, y, z);
-        let billboard_matrix = matrix4_to_array(cgmath::Matrix4::from_translation(translation));
+
+        // Create a vector from these coordinates
+        let position = Vector3::new(x, y, z);
+
+        // Normalize this vector to get the direction from globe center to the surface
+        let normalized_position = position.normalize();
+
+        // Offset the position slightly above the surface
+        let offset_distance = 0.03 * globe_radius; // Adjust this value based on your needs
+        let offset_position = position + normalized_position * offset_distance;
+
+        // Use the offset position for translation
+        let billboard_matrix = matrix4_to_array(Matrix4::from_translation(offset_position));
         let billboard_matrix_bind_group_layout =
             MeshSystem::create_model_matrix_bind_group_layout(&device);
         let billboard_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
